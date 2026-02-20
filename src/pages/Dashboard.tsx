@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { QrCode, Plus, ExternalLink, Trash2, CheckCircle, BarChart3, Star } from "lucide-react";
+import { QrCode, Plus, ExternalLink, Trash2, CheckCircle, BarChart3, Star, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -75,13 +75,23 @@ export default function Dashboard() {
             </h1>
             <p className="text-muted-foreground mt-1">Manage your QR codes and track review performance.</p>
           </div>
-          <Button
-            onClick={() => navigate("/generate")}
-            className="hero-gradient text-white border-0 shadow-primary hover:opacity-90 h-11 px-6"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New QR Code
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => navigate("/analytics")}
+              variant="outline"
+              className="h-11 px-5 border-primary text-primary hover:bg-primary/10"
+            >
+              <TrendingUp className="h-4 w-4 mr-2" />
+              View Analytics
+            </Button>
+            <Button
+              onClick={() => navigate("/generate")}
+              className="hero-gradient text-white border-0 shadow-primary hover:opacity-90 h-11 px-6"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New QR Code
+            </Button>
+          </div>
         </div>
 
         {/* Stats */}
