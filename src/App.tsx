@@ -11,6 +11,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import GenerateQR from "./pages/GenerateQR";
 import ScanRedirect from "./pages/ScanRedirect";
+import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -54,6 +55,16 @@ const App = () => (
                 <AppLayout>
                   <ProtectedRoute>
                     <GenerateQR />
+                  </ProtectedRoute>
+                </AppLayout>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <AppLayout>
+                  <ProtectedRoute>
+                    <Analytics />
                   </ProtectedRoute>
                 </AppLayout>
               }

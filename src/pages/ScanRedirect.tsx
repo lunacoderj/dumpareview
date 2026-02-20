@@ -15,12 +15,16 @@ interface QRData {
   successful_scans: number;
 }
 
+
 export default function ScanRedirect() {
   const { id } = useParams<{ id: string }>();
   const [scanState, setScanState] = useState<ScanState>("loading");
   const [message, setMessage] = useState("");
   const [reviewLink, setReviewLink] = useState("");
   const [error, setError] = useState("");
+  const [clipboardCopied, setClipboardCopied] = useState(false);
+  const [qrId, setQrId] = useState<string | null>(null);
+  const [scanCount, setScanCount] = useState(0);
   const processed = useRef(false);
 
   useEffect(() => {
@@ -56,24 +60,30 @@ export default function ScanRedirect() {
 
       setMessage(selectedMessage);
       setReviewLink(qrData.google_review_link);
+      setQrId(qrData.id);
+      setScanCount(qrData.successful_scans);
 
-      // Try clipboard copy
+      // Try clipboard copy — count as successful only if copy works
+      let clipboardSuccess = false;
       try {
         await navigator.clipboard.writeText(selectedMessage);
+        clipboardSuccess = true;
+        setClipboardCopied(true);
       } catch {
-        // Will show manual copy button as fallback
+        // Clipboard failed (common on mobile); user can copy manually
+        setClipboardCopied(false);
       }
 
-      // Update index and increment scans
+      // Update index and increment scans only on clipboard success
       await supabase
         .from("qr_codes")
         .update({
           current_message_index: nextIndex,
-          successful_scans: qrData.successful_scans + 1,
+          ...(clipboardSuccess && { successful_scans: qrData.successful_scans + 1 }),
         })
         .eq("id", id);
 
-      // Log scan event
+      // Log scan event (always, to track all scans)
       await supabase.from("scan_events").insert({
         qr_code_id: id,
         message_used: selectedMessage,
@@ -96,6 +106,14 @@ export default function ScanRedirect() {
   const handleManualCopy = async () => {
     try {
       await navigator.clipboard.writeText(message);
+      // If first time copying successfully (clipboard was blocked before), count the scan
+      if (!clipboardCopied && qrId) {
+        setClipboardCopied(true);
+        await supabase
+          .from("qr_codes")
+          .update({ successful_scans: scanCount + 1 })
+          .eq("id", qrId);
+      }
     } catch {
       /* ignore */
     }
