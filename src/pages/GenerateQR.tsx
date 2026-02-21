@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,7 +9,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { QrCode, Plus, Trash2, Download, ArrowLeft, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
-import { useRef } from "react";
 
 interface GeneratedQR {
   id: string;
@@ -17,12 +16,16 @@ interface GeneratedQR {
   scanUrl: string;
 }
 
+type InputMode = "individual" | "bulk";
+
 export default function GenerateQR() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [link, setLink] = useState("");
   const [messages, setMessages] = useState<string[]>([""]);
+  const [bulkText, setBulkText] = useState("");
+  const [inputMode, setInputMode] = useState<InputMode>("bulk");
   const [loading, setLoading] = useState(false);
   const [generated, setGenerated] = useState<GeneratedQR | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
@@ -46,12 +49,23 @@ export default function GenerateQR() {
     setMessages(updated);
   };
 
+  const getValidMessages = (): string[] => {
+    if (inputMode === "bulk") {
+      return bulkText
+        .split("\n")
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0);
+    }
+    return messages.filter((m) => m.trim());
+  };
+
   const handleGenerate = async () => {
     if (!name.trim()) { toast.error("Please enter a name for the QR code."); return; }
     if (!link.trim()) { toast.error("Please enter a Google Review link."); return; }
     if (!link.startsWith("http")) { toast.error("Please enter a valid URL starting with http(s)://"); return; }
-    const validMessages = messages.filter(m => m.trim());
+    const validMessages = getValidMessages();
     if (validMessages.length === 0) { toast.error("Please add at least one message."); return; }
+    if (validMessages.length > 100) { toast.error("Maximum 100 messages allowed."); return; }
     if (!user) { toast.error("You must be logged in."); return; }
 
     setLoading(true);
@@ -63,6 +77,7 @@ export default function GenerateQR() {
           name: name.trim(),
           google_review_link: link.trim(),
           messages: validMessages,
+          message_used_counts: new Array(validMessages.length).fill(0),
           current_message_index: 0,
           successful_scans: 0,
         })
@@ -74,7 +89,7 @@ export default function GenerateQR() {
       const scanUrl = `${window.location.origin}/scan/${data.id}`;
       setGenerated({ id: data.id, name: data.name, scanUrl });
       toast.success("QR code generated successfully!");
-    } catch (err: unknown) {
+    } catch {
       toast.error("Failed to generate QR code. Please try again.");
     } finally {
       setLoading(false);
@@ -106,7 +121,10 @@ export default function GenerateQR() {
     setName("");
     setLink("");
     setMessages([""]);
+    setBulkText("");
   };
+
+  const bulkCount = bulkText.split("\n").filter((m) => m.trim()).length;
 
   return (
     <div className="min-h-screen bg-background py-8 px-4">
@@ -125,7 +143,6 @@ export default function GenerateQR() {
         </div>
 
         {generated ? (
-          /* Success State */
           <div className="stat-card rounded-2xl text-center p-10">
             <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-green-100 mb-6">
               <CheckCircle className="h-8 w-8 text-green-600" />
@@ -135,12 +152,7 @@ export default function GenerateQR() {
 
             <div ref={qrRef} className="flex justify-center mb-6">
               <div className="p-6 bg-white rounded-2xl border border-border shadow-md inline-block">
-                <QRCodeSVG
-                  value={generated.scanUrl}
-                  size={200}
-                  level="H"
-                  includeMargin
-                />
+                <QRCodeSVG value={generated.scanUrl} size={200} level="H" includeMargin />
               </div>
             </div>
 
@@ -154,39 +166,21 @@ export default function GenerateQR() {
                 <Download className="h-4 w-4 mr-2" />
                 Download QR Code
               </Button>
-              <Button variant="outline" onClick={() => navigate("/dashboard")}>
-                View Dashboard
-              </Button>
-              <Button variant="ghost" onClick={handleReset}>
-                Create Another
-              </Button>
+              <Button variant="outline" onClick={() => navigate("/dashboard")}>View Dashboard</Button>
+              <Button variant="ghost" onClick={handleReset}>Create Another</Button>
             </div>
           </div>
         ) : (
-          /* Form */
           <div className="space-y-6">
             <div className="stat-card rounded-2xl space-y-5">
               <div>
                 <Label htmlFor="name" className="text-sm font-medium">QR Code Name</Label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="e.g. Cafe Bella Review QR"
-                  className="mt-1.5 h-11"
-                />
+                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Cafe Bella Review QR" className="mt-1.5 h-11" />
                 <p className="text-xs text-muted-foreground mt-1">A label to identify this QR code in your dashboard.</p>
               </div>
-
               <div>
                 <Label htmlFor="link" className="text-sm font-medium">Google Review Link</Label>
-                <Input
-                  id="link"
-                  value={link}
-                  onChange={e => setLink(e.target.value)}
-                  placeholder="https://g.page/r/your-business/review"
-                  className="mt-1.5 h-11"
-                />
+                <Input id="link" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://g.page/r/your-business/review" className="mt-1.5 h-11" />
                 <p className="text-xs text-muted-foreground mt-1">The URL customers will be taken to after copying the message.</p>
               </div>
             </div>
@@ -196,42 +190,70 @@ export default function GenerateQR() {
                 <div>
                   <h3 className="font-semibold text-foreground">Review Messages</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {messages.filter(m => m.trim()).length} / 100 messages added. Each customer gets the next unused message.
+                    {inputMode === "bulk" ? `${bulkCount}` : `${messages.filter((m) => m.trim()).length}`} / 100 messages.
+                    Each scan picks a random unused message.
                   </p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={addMessage}
-                  disabled={messages.length >= 100}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add
-                </Button>
+                <div className="flex gap-1 bg-secondary rounded-lg p-0.5">
+                  <button
+                    onClick={() => setInputMode("bulk")}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${inputMode === "bulk" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    Bulk Paste
+                  </button>
+                  <button
+                    onClick={() => setInputMode("individual")}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${inputMode === "individual" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    Individual
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                {messages.map((msg, i) => (
-                  <div key={i} className="flex gap-2 items-start">
-                    <span className="flex-shrink-0 h-8 w-8 flex items-center justify-center text-xs font-bold text-muted-foreground bg-secondary rounded-lg mt-0.5">
-                      {i + 1}
-                    </span>
-                    <Textarea
-                      value={msg}
-                      onChange={e => updateMessage(i, e.target.value)}
-                      placeholder={`Message ${i + 1}: e.g. "Great service and food! Highly recommend the pasta."`}
-                      className="flex-1 min-h-[80px] text-sm resize-none"
-                    />
-                    <button
-                      onClick={() => removeMessage(i)}
-                      disabled={messages.length === 1}
-                      className="flex-shrink-0 h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-destructive disabled:opacity-30 transition-colors mt-0.5"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+              {inputMode === "bulk" ? (
+                <div>
+                  <Textarea
+                    value={bulkText}
+                    onChange={(e) => setBulkText(e.target.value)}
+                    placeholder={"Paste all messages here, one per line:\n\nGreat food and service!\nLoved the ambiance, will come back.\nBest coffee in town!"}
+                    className="min-h-[240px] text-sm resize-none"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    One message per line. Empty lines are ignored.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-end mb-3">
+                    <Button variant="outline" size="sm" onClick={addMessage} disabled={messages.length >= 100}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add
+                    </Button>
                   </div>
-                ))}
-              </div>
+                  <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                    {messages.map((msg, i) => (
+                      <div key={i} className="flex gap-2 items-start">
+                        <span className="flex-shrink-0 h-8 w-8 flex items-center justify-center text-xs font-bold text-muted-foreground bg-secondary rounded-lg mt-0.5">
+                          {i + 1}
+                        </span>
+                        <Textarea
+                          value={msg}
+                          onChange={(e) => updateMessage(i, e.target.value)}
+                          placeholder={`Message ${i + 1}: e.g. "Great service and food!"`}
+                          className="flex-1 min-h-[80px] text-sm resize-none"
+                        />
+                        <button
+                          onClick={() => removeMessage(i)}
+                          disabled={messages.length === 1}
+                          className="flex-shrink-0 h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-destructive disabled:opacity-30 transition-colors mt-0.5"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             <Button

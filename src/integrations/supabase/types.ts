@@ -50,6 +50,7 @@ export type Database = {
           current_message_index: number
           google_review_link: string
           id: string
+          message_used_counts: number[]
           messages: string[]
           name: string
           successful_scans: number
@@ -61,6 +62,7 @@ export type Database = {
           current_message_index?: number
           google_review_link: string
           id?: string
+          message_used_counts?: number[]
           messages?: string[]
           name: string
           successful_scans?: number
@@ -72,6 +74,7 @@ export type Database = {
           current_message_index?: number
           google_review_link?: string
           id?: string
+          message_used_counts?: number[]
           messages?: string[]
           name?: string
           successful_scans?: number
@@ -117,7 +120,11 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      confirm_scan: {
+        Args: { p_message_index: number; p_message_used: string; qr_id: string }
+        Returns: undefined
+      }
+      process_scan: { Args: { qr_id: string }; Returns: Json }
     }
     Enums: {
       [_ in never]: never
