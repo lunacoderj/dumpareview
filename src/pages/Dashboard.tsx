@@ -224,6 +224,15 @@ export default function Dashboard() {
                           >
                             Copy URL
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => navigate(`/qr/${qr.id}`)}
+                            className="text-xs text-primary"
+                          >
+                            <BarChart3 className="h-3.5 w-3.5 mr-1" />
+                            Analysis
+                          </Button>
                           <button
                             onClick={() => handleDelete(qr.id)}
                             className="h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors rounded-lg hover:bg-destructive/10"
