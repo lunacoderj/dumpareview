@@ -228,7 +228,7 @@ export default function QRDetail() {
           </div>
 
           {/* Stats Cards */}
-          <div className="md:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div className="md:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="stat-card rounded-2xl">
               <div className="flex items-center gap-3 mb-3">
                 <div className="h-10 w-10 hero-gradient rounded-xl flex items-center justify-center">
@@ -255,6 +255,15 @@ export default function QRDetail() {
                 <span className="text-sm font-medium text-muted-foreground">Messages Copied</span>
               </div>
               <p className="text-3xl font-bold text-foreground">{totalUsedCount}</p>
+            </div>
+            <div className="stat-card rounded-2xl">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="h-10 w-10 bg-primary rounded-xl flex items-center justify-center">
+                  <ThumbsUp className="h-5 w-5 text-white" />
+                </div>
+                <span className="text-sm font-medium text-muted-foreground">Reviews Done</span>
+              </div>
+              <p className="text-3xl font-bold text-foreground">{qr.reviews_done}</p>
             </div>
           </div>
         </div>
