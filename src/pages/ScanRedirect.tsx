@@ -50,7 +50,7 @@ export default function ScanRedirect() {
       try {
         await navigator.clipboard.writeText(result.message!);
         // Copy succeeded — confirm scan
-        const { data: eventId } = await supabase.rpc("confirm_scan", {
+        const { data: eventId } = await (supabase.rpc as any)("confirm_scan", {
           qr_id: id!,
           p_message_used: result.message!,
           p_message_index: result.message_index!,
