@@ -122,7 +122,7 @@ export type Database = {
     Functions: {
       confirm_scan: {
         Args: { p_message_index: number; p_message_used: string; qr_id: string }
-        Returns: undefined
+        Returns: string
       }
       process_scan: { Args: { qr_id: string }; Returns: Json }
     }

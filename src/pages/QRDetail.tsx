@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import {
   ArrowLeft, Download, QrCode, CheckCircle, MessageSquare,
-  ChevronDown, ChevronUp, ExternalLink, BarChart3, Copy, Pencil, Check, X,
+  ChevronDown, ChevronUp, ExternalLink, BarChart3, Copy, Pencil, Check, X, ThumbsUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -22,6 +22,7 @@ interface QRCodeData {
   messages: string[];
   message_used_counts: number[];
   successful_scans: number;
+  reviews_done: number;
   created_at: string;
 }
 
@@ -30,6 +31,7 @@ interface ScanEvent {
   message_used: string | null;
   message_index: number | null;
   scanned_at: string;
+  review_confirmed: boolean;
 }
 
 export default function QRDetail() {
@@ -62,8 +64,8 @@ export default function QRDetail() {
           return;
         }
 
-        setQr(qrRes.data);
-        setEvents(eventsRes.data ?? []);
+        setQr(qrRes.data as unknown as QRCodeData);
+        setEvents((eventsRes.data ?? []) as unknown as ScanEvent[]);
       } catch {
         setError("Failed to load data.");
       }
@@ -227,7 +229,7 @@ export default function QRDetail() {
           </div>
 
           {/* Stats Cards */}
-          <div className="md:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div className="md:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="stat-card rounded-2xl">
               <div className="flex items-center gap-3 mb-3">
                 <div className="h-10 w-10 hero-gradient rounded-xl flex items-center justify-center">
@@ -254,6 +256,15 @@ export default function QRDetail() {
                 <span className="text-sm font-medium text-muted-foreground">Messages Copied</span>
               </div>
               <p className="text-3xl font-bold text-foreground">{totalUsedCount}</p>
+            </div>
+            <div className="stat-card rounded-2xl">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="h-10 w-10 bg-primary rounded-xl flex items-center justify-center">
+                  <ThumbsUp className="h-5 w-5 text-white" />
+                </div>
+                <span className="text-sm font-medium text-muted-foreground">Reviews Done</span>
+              </div>
+              <p className="text-3xl font-bold text-foreground">{qr.reviews_done}</p>
             </div>
           </div>
         </div>
@@ -340,6 +351,7 @@ export default function QRDetail() {
                   <TableRow className="bg-secondary/50">
                     <TableHead className="w-12 font-semibold">#</TableHead>
                     <TableHead className="font-semibold">Message Used</TableHead>
+                    <TableHead className="font-semibold text-center w-32">Review Done</TableHead>
                     <TableHead className="font-semibold w-48">Scanned At</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -349,6 +361,13 @@ export default function QRDetail() {
                       <TableCell className="font-medium text-muted-foreground">{idx + 1}</TableCell>
                       <TableCell className="text-sm text-foreground max-w-md truncate">
                         {ev.message_used ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {ev.review_confirmed ? (
+                          <CheckCircle className="h-4 w-4 text-primary mx-auto" />
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {format(new Date(ev.scanned_at), "MMM d, yyyy h:mm a")}
