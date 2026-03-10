@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle, Copy, AlertCircle, QrCode } from "lucide-react";
+import { CheckCircle, Copy, AlertCircle, QrCode, ExternalLink, ThumbsUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-type ScanState = "loading" | "ready" | "done" | "error" | "no_messages";
+type ScanState = "loading" | "ready" | "copied" | "review_opened" | "done" | "error" | "no_messages";
 
 export default function ScanRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -13,6 +13,7 @@ export default function ScanRedirect() {
   const [messageIndex, setMessageIndex] = useState(0);
   const [reviewLink, setReviewLink] = useState("");
   const [error, setError] = useState("");
+  const [scanEventId, setScanEventId] = useState<string | null>(null);
   const processed = useRef(false);
 
   useEffect(() => {
@@ -48,8 +49,14 @@ export default function ScanRedirect() {
       // Try auto-copy
       try {
         await navigator.clipboard.writeText(result.message!);
-        // Copy succeeded — confirm scan and redirect
-        await confirmAndRedirect(id!, result.message!, result.message_index!, result.google_review_link!);
+        // Copy succeeded — confirm scan
+        const { data: eventId } = await supabase.rpc("confirm_scan", {
+          qr_id: id!,
+          p_message_used: result.message!,
+          p_message_index: result.message_index!,
+        });
+        setScanEventId(eventId as string);
+        setScanState("copied");
       } catch {
         // Clipboard failed — show manual copy UI
         setScanState("ready");
@@ -60,24 +67,36 @@ export default function ScanRedirect() {
     }
   };
 
-  const confirmAndRedirect = async (qrId: string, msg: string, idx: number, link: string) => {
-    setScanState("done");
-    await supabase.rpc("confirm_scan", {
-      qr_id: qrId,
-      p_message_used: msg,
-      p_message_index: idx,
-    });
-    setTimeout(() => {
-      window.location.href = link;
-    }, 1000);
-  };
-
   const handleManualCopy = async () => {
     try {
       await navigator.clipboard.writeText(message);
-      await confirmAndRedirect(id!, message, messageIndex, reviewLink);
+      const { data: eventId } = await supabase.rpc("confirm_scan", {
+        qr_id: id!,
+        p_message_used: message,
+        p_message_index: messageIndex,
+      });
+      setScanEventId(eventId as string);
+      setScanState("copied");
     } catch {
       // Still can't copy — let user try again
+    }
+  };
+
+  const handleOpenReview = () => {
+    window.open(reviewLink, "_blank");
+    setScanState("review_opened");
+  };
+
+  const handleDone = async () => {
+    if (!scanEventId || !id) return;
+    try {
+      await supabase.rpc("confirm_review_done", {
+        qr_id: id,
+        scan_event_id: scanEventId,
+      });
+      setScanState("done");
+    } catch {
+      // silently fail
     }
   };
 
@@ -127,14 +146,16 @@ export default function ScanRedirect() {
           </div>
         )}
 
-        {scanState === "done" && (
+        {(scanState === "copied" || scanState === "review_opened") && (
           <div className="py-2">
-            <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5 bg-success-muted">
-              <CheckCircle className="h-8 w-8 text-success-foreground" />
+            <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5 bg-green-100">
+              <CheckCircle className="h-8 w-8 text-green-600" />
             </div>
             <h2 className="text-xl font-bold text-foreground mb-2">Message Copied! 🎉</h2>
             <p className="text-sm text-muted-foreground mb-5">
-              Redirecting you to the review page…
+              {scanState === "copied"
+                ? "Now open the review page, paste your message, and post your review!"
+                : "Paste the message, post your review, then tap Done below."}
             </p>
 
             <div className="bg-secondary rounded-xl p-4 text-left mb-5 border border-border">
@@ -145,23 +166,53 @@ export default function ScanRedirect() {
               <p className="text-sm text-foreground leading-relaxed">{message}</p>
             </div>
 
-            <p className="text-xs text-muted-foreground mb-4">
-              Paste this message into the Google review box!
-            </p>
+            <div className="space-y-3">
+              <Button
+                onClick={handleOpenReview}
+                className="w-full hero-gradient text-white border-0 shadow-primary hover:opacity-90"
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                {scanState === "copied" ? "Open Review Page" : "Open Review Page Again"}
+              </Button>
 
-            <Button
-              onClick={() => { window.location.href = reviewLink; }}
-              className="w-full hero-gradient text-white border-0 shadow-primary hover:opacity-90"
-              size="sm"
-            >
-              Open Review Page Now
-            </Button>
+              <Button
+                onClick={handleDone}
+                disabled={scanState === "copied"}
+                variant="outline"
+                className={`w-full transition-all ${
+                  scanState === "review_opened"
+                    ? "border-green-500 text-green-700 hover:bg-green-50 font-semibold"
+                    : "opacity-50"
+                }`}
+              >
+                <ThumbsUp className="h-4 w-4 mr-2" />
+                {scanState === "copied" ? "Open review page first" : "I've Posted My Review ✓"}
+              </Button>
+
+              {scanState === "copied" && (
+                <p className="text-xs text-muted-foreground">
+                  The "Done" button will activate after you open the review page.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {scanState === "done" && (
+          <div className="py-2">
+            <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5 bg-green-100">
+              <ThumbsUp className="h-8 w-8 text-green-600" />
+            </div>
+            <h2 className="text-xl font-bold text-foreground mb-2">Thank You! 🙏</h2>
+            <p className="text-sm text-muted-foreground mb-5">
+              Your review has been noted. We really appreciate your feedback!
+            </p>
           </div>
         )}
 
         {scanState === "error" && (
           <div className="py-6">
-            <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5 bg-error-muted">
+            <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5 bg-red-100">
               <AlertCircle className="h-8 w-8 text-destructive" />
             </div>
             <h2 className="text-xl font-bold text-foreground mb-2">Oops!</h2>

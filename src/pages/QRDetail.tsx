@@ -22,6 +22,7 @@ interface QRCodeData {
   messages: string[];
   message_used_counts: number[];
   successful_scans: number;
+  reviews_done: number;
   created_at: string;
 }
 
