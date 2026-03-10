@@ -144,12 +144,43 @@ export default function QRDetail() {
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">{qr.name}</h1>
+          <div className="flex items-center gap-3">
+            {editingName ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="text-2xl font-bold h-auto py-1 max-w-xs"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveName();
+                    if (e.key === "Escape") setEditingName(false);
+                  }}
+                />
+                <Button size="icon" variant="ghost" onClick={handleSaveName} disabled={!newName.trim()}>
+                  <Check className="h-4 w-4 text-primary" />
+                </Button>
+                <Button size="icon" variant="ghost" onClick={() => setEditingName(false)}>
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </div>
+            ) : (
+              <>
+                <h1 className="text-3xl font-bold text-foreground">{qr.name}</h1>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => { setNewName(qr.name); setEditingName(true); }}
+                  className="h-8 w-8"
+                >
+                  <Pencil className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </>
+            )}
+          </div>
             <p className="text-muted-foreground mt-1 text-sm">
               Created {format(new Date(qr.created_at), "MMMM d, yyyy")}
             </p>
-          </div>
           <a
             href={qr.google_review_link}
             target="_blank"
