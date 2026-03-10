@@ -31,6 +31,7 @@ interface ScanEvent {
   message_used: string | null;
   message_index: number | null;
   scanned_at: string;
+  review_confirmed: boolean;
 }
 
 export default function QRDetail() {
