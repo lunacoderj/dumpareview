@@ -43,6 +43,8 @@ export default function QRDetail() {
   const [loading, setLoading] = useState(true);
   const [showAllMessages, setShowAllMessages] = useState(false);
   const [error, setError] = useState("");
+  const [editingName, setEditingName] = useState(false);
+  const [newName, setNewName] = useState("");
 
   useEffect(() => {
     if (!user || !id) return;
