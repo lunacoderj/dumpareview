@@ -70,7 +70,7 @@ export default function ScanRedirect() {
   const handleManualCopy = async () => {
     try {
       await navigator.clipboard.writeText(message);
-      const { data: eventId } = await supabase.rpc("confirm_scan", {
+      const { data: eventId } = await (supabase.rpc as any)("confirm_scan", {
         qr_id: id!,
         p_message_used: message,
         p_message_index: messageIndex,
