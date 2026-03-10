@@ -90,7 +90,7 @@ export default function ScanRedirect() {
   const handleDone = async () => {
     if (!scanEventId || !id) return;
     try {
-      await supabase.rpc("confirm_review_done", {
+      await (supabase.rpc as any)("confirm_review_done", {
         qr_id: id,
         scan_event_id: scanEventId,
       });
