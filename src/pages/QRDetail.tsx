@@ -65,7 +65,7 @@ export default function QRDetail() {
         }
 
         setQr(qrRes.data as unknown as QRCodeData);
-        setEvents(eventsRes.data ?? []);
+        setEvents((eventsRes.data ?? []) as unknown as ScanEvent[]);
       } catch {
         setError("Failed to load data.");
       }
