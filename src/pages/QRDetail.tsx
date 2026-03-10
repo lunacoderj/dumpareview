@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import {
   ArrowLeft, Download, QrCode, CheckCircle, MessageSquare,
-  ChevronDown, ChevronUp, ExternalLink, BarChart3, Copy,
+  ChevronDown, ChevronUp, ExternalLink, BarChart3, Copy, Pencil, Check, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
