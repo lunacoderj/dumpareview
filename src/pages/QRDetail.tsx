@@ -351,6 +351,7 @@ export default function QRDetail() {
                   <TableRow className="bg-secondary/50">
                     <TableHead className="w-12 font-semibold">#</TableHead>
                     <TableHead className="font-semibold">Message Used</TableHead>
+                    <TableHead className="font-semibold text-center w-32">Review Done</TableHead>
                     <TableHead className="font-semibold w-48">Scanned At</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -360,6 +361,13 @@ export default function QRDetail() {
                       <TableCell className="font-medium text-muted-foreground">{idx + 1}</TableCell>
                       <TableCell className="text-sm text-foreground max-w-md truncate">
                         {ev.message_used ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {ev.review_confirmed ? (
+                          <CheckCircle className="h-4 w-4 text-primary mx-auto" />
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {format(new Date(ev.scanned_at), "MMM d, yyyy h:mm a")}
