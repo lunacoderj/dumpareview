@@ -3,12 +3,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   ArrowLeft, Download, QrCode, CheckCircle, MessageSquare,
-  ChevronDown, ChevronUp, ExternalLink, BarChart3, Copy,
+  ChevronDown, ChevronUp, ExternalLink, BarChart3, Copy, Pencil, Check, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -42,6 +43,8 @@ export default function QRDetail() {
   const [loading, setLoading] = useState(true);
   const [showAllMessages, setShowAllMessages] = useState(false);
   const [error, setError] = useState("");
+  const [editingName, setEditingName] = useState(false);
+  const [newName, setNewName] = useState("");
 
   useEffect(() => {
     if (!user || !id) return;
@@ -88,6 +91,18 @@ export default function QRDetail() {
       a.click();
     };
     img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+  };
+
+  const handleSaveName = async () => {
+    if (!qr || !newName.trim()) return;
+    const { error } = await supabase.from("qr_codes").update({ name: newName.trim() }).eq("id", qr.id);
+    if (error) {
+      toast.error("Failed to update name");
+    } else {
+      setQr({ ...qr, name: newName.trim() });
+      toast.success("Name updated!");
+    }
+    setEditingName(false);
   };
 
   // Compute message stats
@@ -141,12 +156,43 @@ export default function QRDetail() {
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">{qr.name}</h1>
+          <div className="flex items-center gap-3">
+            {editingName ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="text-2xl font-bold h-auto py-1 max-w-xs"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveName();
+                    if (e.key === "Escape") setEditingName(false);
+                  }}
+                />
+                <Button size="icon" variant="ghost" onClick={handleSaveName} disabled={!newName.trim()}>
+                  <Check className="h-4 w-4 text-primary" />
+                </Button>
+                <Button size="icon" variant="ghost" onClick={() => setEditingName(false)}>
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </div>
+            ) : (
+              <>
+                <h1 className="text-3xl font-bold text-foreground">{qr.name}</h1>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => { setNewName(qr.name); setEditingName(true); }}
+                  className="h-8 w-8"
+                >
+                  <Pencil className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </>
+            )}
+          </div>
             <p className="text-muted-foreground mt-1 text-sm">
               Created {format(new Date(qr.created_at), "MMMM d, yyyy")}
             </p>
-          </div>
           <a
             href={qr.google_review_link}
             target="_blank"
