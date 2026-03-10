@@ -93,6 +93,18 @@ export default function QRDetail() {
     img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
   };
 
+  const handleSaveName = async () => {
+    if (!qr || !newName.trim()) return;
+    const { error } = await supabase.from("qr_codes").update({ name: newName.trim() }).eq("id", qr.id);
+    if (error) {
+      toast.error("Failed to update name");
+    } else {
+      setQr({ ...qr, name: newName.trim() });
+      toast.success("Name updated!");
+    }
+    setEditingName(false);
+  };
+
   // Compute message stats
   const messageStats = qr
     ? qr.messages.map((msg, i) => {
