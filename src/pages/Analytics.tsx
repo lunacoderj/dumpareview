@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,7 +64,7 @@ export default function Analytics() {
       supabase
         .from("qr_codes")
         .select("id, name, successful_scans, messages, created_at")
-        .eq("user_id", user!.id)
+        .eq("user_id", user!.uid)
         .order("successful_scans", { ascending: false }),
       supabase
         .from("scan_events")

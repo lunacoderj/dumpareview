@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,7 +73,7 @@ export default function GenerateQR() {
       const { data, error } = await supabase
         .from("qr_codes")
         .insert({
-          user_id: user.id,
+          user_id: user.uid,
           name: name.trim(),
           google_review_link: link.trim(),
           messages: validMessages,

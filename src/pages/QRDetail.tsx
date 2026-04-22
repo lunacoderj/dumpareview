@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,7 +54,7 @@ export default function QRDetail() {
     const fetchData = async () => {
       try {
         const [qrRes, eventsRes] = await Promise.all([
-          supabase.from("qr_codes").select("*").eq("id", id).eq("user_id", user.id).single(),
+          supabase.from("qr_codes").select("*").eq("id", id).eq("user_id", user.uid).single(),
           supabase.from("scan_events").select("*").eq("qr_code_id", id).order("scanned_at", { ascending: false }).limit(200),
         ]);
 

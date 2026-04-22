@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
+import { signInWithPopup } from "firebase/auth";
+import { auth, googleProvider } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { QrCode, Chrome } from "lucide-react";
@@ -19,14 +19,12 @@ export default function Auth() {
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
-      const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: `${window.location.origin}/dashboard`,
-      });
-      if (result?.error) {
-        toast.error("Failed to sign in with Google. Please try again.");
-      }
+      await signInWithPopup(auth, googleProvider);
+      toast.success("Successfully signed in!");
+      navigate("/dashboard");
     } catch (err) {
-      toast.error("Something went wrong. Please try again.");
+      console.error(err);
+      toast.error("Failed to sign in with Google. Please try again.");
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +36,7 @@ export default function Dashboard() {
     const { data, error } = await supabase
       .from("qr_codes")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("user_id", user.uid)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -71,7 +71,7 @@ export default function Dashboard() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold text-foreground">
-              Welcome back, {user?.user_metadata?.full_name?.split(" ")[0] ?? "there"}! 👋
+              Welcome back, {user?.displayName?.split(" ")[0] ?? "there"}! 👋
             </h1>
             <p className="text-muted-foreground mt-1">Manage your QR codes and track review performance.</p>
           </div>

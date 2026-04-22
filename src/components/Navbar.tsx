@@ -66,19 +66,19 @@ export default function Navbar() {
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-secondary transition-colors">
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src={user.user_metadata?.avatar_url} />
+                      <AvatarImage src={user.photoURL || undefined} />
                       <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-                        {user.user_metadata?.full_name?.[0] ?? user.email?.[0]?.toUpperCase()}
+                        {user.displayName?.[0] ?? user.email?.[0]?.toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <span className="hidden sm:block text-sm font-medium text-foreground max-w-32 truncate">
-                      {user.user_metadata?.full_name ?? user.email}
+                      {user.displayName ?? user.email}
                     </span>
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-52">
                   <div className="px-3 py-2">
-                    <p className="text-sm font-medium truncate">{user.user_metadata?.full_name}</p>
+                    <p className="text-sm font-medium truncate">{user.displayName}</p>
                     <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                   </div>
                   <DropdownMenuSeparator />

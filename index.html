@@ -4,24 +4,38 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- TODO: Set the document title to the name of your application -->
-    <title>Google_Reviews</title>
-    <meta name="description" content="This platform is to grow the bussiness with 5star reviews">
-    <meta name="author" content="Lovable" />
+    <title>DumpaReview - Grow your business with 5-star reviews</title>
+    <meta name="description" content="Collect and manage Google reviews effortlessly with smart QR codes.">
+    <meta name="author" content="DumpaReview" />
 
-    <!-- TODO: Update og:title to match your application name -->
-    
-    
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/d04b9f17-0a05-4d0d-abb3-5fcb11c5776a/id-preview-76d5bcd0--28bf9791-e84a-401b-9736-3448561d878b.lovable.app-1771562668386.png">
+    <meta property="og:title" content="DumpaReview">
+    <meta property="og:description" content="Collect and manage Google reviews effortlessly with smart QR codes.">
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@Lovable" />
-    <meta name="twitter:image" content="https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/d04b9f17-0a05-4d0d-abb3-5fcb11c5776a/id-preview-76d5bcd0--28bf9791-e84a-401b-9736-3448561d878b.lovable.app-1771562668386.png">
-    <meta property="og:title" content="Google_Reviews">
-  <meta name="twitter:title" content="Google_Reviews">
-  <meta property="og:description" content="This platform is to grow the bussiness with 5star reviews">
-  <meta name="twitter:description" content="This platform is to grow the bussiness with 5star reviews">
-</head>
+    <meta name="twitter:title" content="DumpaReview">
+    <meta name="twitter:description" content="Collect and manage Google reviews effortlessly with smart QR codes.">
+    
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    
+    <!-- Google AdSense -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6222108934557142" crossorigin="anonymous"></script>
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').then(reg => {
+            console.log('SW registered');
+          }).catch(err => {
+            console.log('SW failed', err);
+          });
+        });
+      }
+    </script>
+  </head>
 
   <body>
     <div id="root"></div>

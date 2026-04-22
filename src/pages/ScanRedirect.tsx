@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle, Copy, AlertCircle, QrCode, ExternalLink, ThumbsUp } from "lucide-react";
+import { supabase } from "@/lib/supabase/client";
+import { CheckCircle, Copy, AlertCircle, QrCode, ExternalLink, ThumbsUp, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-type ScanState = "loading" | "ready" | "copied" | "review_opened" | "done" | "error" | "no_messages";
+type ScanState = "loading" | "ready" | "copied" | "review_opened" | "done" | "error" | "no_messages" | "redirecting";
 
 export default function ScanRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -13,14 +13,30 @@ export default function ScanRedirect() {
   const [messageIndex, setMessageIndex] = useState(0);
   const [reviewLink, setReviewLink] = useState("");
   const [error, setError] = useState("");
-  const [scanEventId, setScanEventId] = useState<string | null>(null);
   const processed = useRef(false);
+  const adsInitialized = useRef(false);
 
   useEffect(() => {
     if (!id || processed.current) return;
     processed.current = true;
     handleScan();
   }, [id]);
+
+  // Initialize AdSense only once
+  useEffect(() => {
+    if (adsInitialized.current) return;
+    
+    try {
+      const adsbygoogle = (window as any).adsbygoogle;
+      if (adsbygoogle) {
+        adsbygoogle.push({});
+        adsbygoogle.push({});
+        adsInitialized.current = true;
+      }
+    } catch (e) {
+      console.error("AdSense initialization failed", e);
+    }
+  }, [scanState]); // Keep scanState as trigger but ref prevents multiple calls
 
   const handleScan = async () => {
     try {
@@ -45,194 +61,142 @@ export default function ScanRedirect() {
       setMessage(result.message!);
       setMessageIndex(result.message_index!);
       setReviewLink(result.google_review_link!);
-
-      // Try auto-copy
-      try {
-        await navigator.clipboard.writeText(result.message!);
-        // Copy succeeded — confirm scan
-        const { data: eventId } = await (supabase.rpc as any)("confirm_scan", {
-          qr_id: id!,
-          p_message_used: result.message!,
-          p_message_index: result.message_index!,
-        });
-        setScanEventId(eventId as string);
-        setScanState("copied");
-      } catch {
-        // Clipboard failed — show manual copy UI
-        setScanState("ready");
-      }
+      setScanState("ready");
     } catch {
       setScanState("error");
       setError("Something went wrong. Please try again.");
     }
   };
 
-  const handleManualCopy = async () => {
+  const handleAction = async () => {
+    setScanState("redirecting");
     try {
+      // 1. Copy to clipboard (Must be in click handler)
       await navigator.clipboard.writeText(message);
-      const { data: eventId } = await (supabase.rpc as any)("confirm_scan", {
+      
+      // 2. Log the event (Await this to ensure it records before redirect)
+      await supabase.rpc("confirm_scan", {
         qr_id: id!,
         p_message_used: message,
         p_message_index: messageIndex,
       });
-      setScanEventId(eventId as string);
-      setScanState("copied");
-    } catch {
-      // Still can't copy — let user try again
-    }
-  };
 
-  const handleOpenReview = () => {
-    window.open(reviewLink, "_blank");
-    setScanState("review_opened");
-  };
-
-  const handleDone = async () => {
-    if (!scanEventId || !id) return;
-    try {
-      await (supabase.rpc as any)("confirm_review_done", {
-        qr_id: id,
-        scan_event_id: scanEventId,
-      });
-      setScanState("done");
-    } catch {
-      // silently fail
+      // 3. Redirect to review page
+      window.location.href = reviewLink;
+    } catch (err) {
+      // Fallback if anything fails, still try to redirect
+      window.location.href = reviewLink;
     }
   };
 
   return (
-    <div className="min-h-screen hero-gradient flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center">
+    <div className="min-h-screen hero-gradient flex flex-col items-center justify-start p-4 sm:p-6 overflow-x-hidden safe-area-padding">
+      
+      {/* Top Ad Space */}
+      <div className="w-full max-w-sm mb-6 bg-white/10 rounded-xl overflow-hidden min-h-[100px] flex items-center justify-center border border-white/10">
+        <ins className="adsbygoogle"
+             style={{ display: 'block' }}
+             data-ad-client="ca-pub-6222108934557142"
+             data-ad-slot="AUTO"
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
+        <span className="text-[10px] text-white/40 absolute">Advertisement</span>
+      </div>
+
+      <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full p-8 text-center animate-in fade-in zoom-in duration-500 relative overflow-hidden">
+        {/* Decorative elements for app-like feel */}
+        <div className="absolute top-0 left-0 w-full h-1.5 hero-gradient opacity-80" />
+        
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="h-8 w-8 hero-gradient rounded-lg flex items-center justify-center">
-            <QrCode className="h-4 w-4 text-white" />
+          <div className="h-9 w-9 hero-gradient rounded-xl flex items-center justify-center shadow-lg">
+            <QrCode className="h-5 w-5 text-white" />
           </div>
-          <span className="font-bold text-lg text-gradient">QReview Pro</span>
+          <span className="font-extrabold text-xl tracking-tight text-gradient">QReview Pro</span>
         </div>
 
         {scanState === "loading" && (
-          <div className="py-6">
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
-            <p className="text-muted-foreground font-medium">Preparing your message...</p>
+          <div className="py-12">
+            <div className="h-14 w-14 animate-spin rounded-full border-[5px] border-primary/20 border-t-primary mx-auto mb-6" />
+            <p className="text-muted-foreground font-semibold text-lg animate-pulse">Initializing...</p>
           </div>
         )}
 
         {scanState === "ready" && (
-          <div className="py-2">
-            <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5 bg-amber-100">
-              <Copy className="h-8 w-8 text-amber-600" />
+          <div className="py-2 space-y-7">
+            <div className="space-y-3">
+              <h2 className="text-3xl font-black text-foreground tracking-tight">Your Review</h2>
+              <p className="text-base text-muted-foreground leading-snug px-2">
+                We've crafted a personalized message for you. Tap below to share your experience.
+              </p>
             </div>
-            <h2 className="text-xl font-bold text-foreground mb-2">Copy Your Review</h2>
-            <p className="text-sm text-muted-foreground mb-5">
-              Tap the button below to copy the message, then paste it on the review page.
-            </p>
 
-            <div className="bg-secondary rounded-xl p-4 text-left mb-5 border border-border">
-              <div className="flex items-center gap-2 mb-2">
-                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Your Review Message</span>
+            <div className="bg-secondary/40 rounded-3xl p-6 text-left border border-border/40 relative overflow-hidden group active:scale-[0.99] transition-transform">
+              <div className="absolute top-0 left-0 w-1.5 h-full hero-gradient" />
+              <div className="flex items-center gap-2 mb-3">
+                <MessageSquare className="h-4 w-4 text-primary" />
+                <span className="text-[11px] font-black text-primary/70 uppercase tracking-[0.2em]">Suggested Feedback</span>
               </div>
-              <p className="text-sm text-foreground leading-relaxed">{message}</p>
+              <p className="text-base text-foreground leading-relaxed font-medium italic">"{message}"</p>
             </div>
 
             <Button
-              onClick={handleManualCopy}
-              className="w-full hero-gradient text-white border-0 shadow-primary hover:opacity-90"
+              onClick={handleAction}
+              className="w-full h-16 text-xl font-bold hero-gradient text-white border-0 shadow-xl hover:scale-[1.03] active:scale-95 transition-all rounded-[1.25rem]"
             >
-              <Copy className="h-4 w-4 mr-2" />
-              Copy Message
+              <Copy className="h-6 w-6 mr-3" />
+              Copy & Continue
             </Button>
+            
+            <p className="text-[11px] text-muted-foreground/80 px-6 leading-relaxed">
+              Message will be copied automatically. You will be redirected to the official Google Review page.
+            </p>
           </div>
         )}
 
-        {(scanState === "copied" || scanState === "review_opened") && (
-          <div className="py-2">
-            <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5 bg-green-100">
-              <CheckCircle className="h-8 w-8 text-green-600" />
+        {scanState === "redirecting" && (
+          <div className="py-12">
+            <div className="h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-8 bg-green-50 animate-bounce">
+              <CheckCircle className="h-10 w-10 text-green-500" />
             </div>
-            <h2 className="text-xl font-bold text-foreground mb-2">Message Copied! 🎉</h2>
-            <p className="text-sm text-muted-foreground mb-5">
-              {scanState === "copied"
-                ? "Now open the review page, paste your message, and post your review!"
-                : "Paste the message, post your review, then tap Done below."}
-            </p>
-
-            <div className="bg-secondary rounded-xl p-4 text-left mb-5 border border-border">
-              <div className="flex items-center gap-2 mb-2">
-                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Your Review Message</span>
-              </div>
-              <p className="text-sm text-foreground leading-relaxed">{message}</p>
-            </div>
-
-            <div className="space-y-3">
-              <Button
-                onClick={handleOpenReview}
-                className="w-full hero-gradient text-white border-0 shadow-primary hover:opacity-90"
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                {scanState === "copied" ? "Open Review Page" : "Open Review Page Again"}
-              </Button>
-
-              <Button
-                onClick={handleDone}
-                disabled={scanState === "copied"}
-                variant="outline"
-                className={`w-full transition-all ${
-                  scanState === "review_opened"
-                    ? "border-green-500 text-green-700 hover:bg-green-50 font-semibold"
-                    : "opacity-50"
-                }`}
-              >
-                <ThumbsUp className="h-4 w-4 mr-2" />
-                {scanState === "copied" ? "Open review page first" : "I've Posted My Review ✓"}
-              </Button>
-
-              {scanState === "copied" && (
-                <p className="text-xs text-muted-foreground">
-                  The "Done" button will activate after you open the review page.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {scanState === "done" && (
-          <div className="py-2">
-            <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5 bg-green-100">
-              <ThumbsUp className="h-8 w-8 text-green-600" />
-            </div>
-            <h2 className="text-xl font-bold text-foreground mb-2">Thank You! 🙏</h2>
-            <p className="text-sm text-muted-foreground mb-5">
-              Your review has been noted. We really appreciate your feedback!
-            </p>
+            <h2 className="text-2xl font-black text-foreground mb-3">Redirecting...</h2>
+            <p className="text-base text-muted-foreground">Opening Google Review portal.</p>
           </div>
         )}
 
         {scanState === "error" && (
           <div className="py-6">
-            <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5 bg-red-100">
-              <AlertCircle className="h-8 w-8 text-destructive" />
+            <div className="h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-6 bg-red-50">
+              <AlertCircle className="h-10 w-10 text-destructive" />
             </div>
-            <h2 className="text-xl font-bold text-foreground mb-2">Oops!</h2>
-            <p className="text-sm text-muted-foreground">{error}</p>
+            <h2 className="text-2xl font-black text-foreground mb-3">Oops!</h2>
+            <p className="text-base text-muted-foreground px-4">{error}</p>
+            <Button 
+              variant="outline" 
+              className="mt-8 w-full h-12 rounded-xl font-bold"
+              onClick={() => window.location.reload()}
+            >
+              Try Again
+            </Button>
           </div>
         )}
 
-        {scanState === "no_messages" && (
-          <div className="py-6">
-            <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5 bg-amber-100">
-              <AlertCircle className="h-8 w-8 text-amber-500" />
-            </div>
-            <h2 className="text-xl font-bold text-foreground mb-2">No Messages</h2>
-            <p className="text-sm text-muted-foreground">This QR code doesn't have any review messages configured.</p>
-          </div>
-        )}
+        <div className="mt-10 pt-8 border-t border-border/40">
+          <p className="text-[11px] font-bold text-muted-foreground/60 flex items-center justify-center gap-1.5 uppercase tracking-widest">
+            Verified by <span className="text-primary/80 font-black">QReview Pro</span>
+          </p>
+        </div>
+      </div>
 
-        <p className="text-xs text-muted-foreground mt-4 border-t border-border pt-4">
-          Powered by <span className="font-semibold text-primary">QReview Pro</span>
-        </p>
+      {/* Bottom Ad Space */}
+      <div className="w-full max-w-sm mt-8 bg-white/10 rounded-xl overflow-hidden min-h-[100px] flex items-center justify-center border border-white/10">
+        <ins className="adsbygoogle"
+             style={{ display: 'block' }}
+             data-ad-client="ca-pub-6222108934557142"
+             data-ad-slot="AUTO"
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
+        <span className="text-[10px] text-white/40 absolute">Advertisement</span>
       </div>
     </div>
   );
