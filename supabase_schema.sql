@@ -134,3 +134,15 @@ CREATE POLICY "Scan events are viewable by everyone" ON public.scan_events
 
 CREATE POLICY "Anyone can insert scan events" ON public.scan_events
   FOR INSERT WITH CHECK (true);
+
+-- 4. Grant Permissions to roles
+-- This is critical for Supabase to allow the 'anon' role to access the schema
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
+
+-- Ensure future tables also have these permissions
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
