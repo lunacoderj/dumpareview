@@ -1,108 +1,205 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { signInWithPopup } from "firebase/auth";
+import { useState } from "react";
+import { Navigate } from "react-router-dom";
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signInWithPopup
+} from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { QrCode, Chrome } from "lucide-react";
-import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
 
 export default function Auth() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
+  const { user, isAdmin, loading, resetPassword } = useAuth();
+  const { toast } = useToast();
+  
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [isReset, setIsReset] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  useEffect(() => {
-    if (user) navigate("/dashboard");
-  }, [user, navigate]);
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin h-8 w-8 text-primary" /></div>;
+
+  if (user) {
+    if (isAdmin) return <Navigate to="/admin" replace />;
+    return <Navigate to="/tasks" replace />;
+  }
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      if (isReset) {
+        await resetPassword(email);
+        toast({ title: "Check your email", description: "Password reset link sent!" });
+        setIsReset(false);
+      } else if (isSignUp) {
+        const userCred = await createUserWithEmailAndPassword(auth, email, password);
+        await sendEmailVerification(userCred.user);
+        toast({ title: "Account created", description: "Please check your email to verify your account." });
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+        toast({ title: "Welcome back!", description: "Successfully signed in." });
+      }
+    } catch (error: any) {
+      toast({ 
+        variant: "destructive", 
+        title: "Authentication Error", 
+        description: error.message 
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
-    setLoading(true);
+    setIsLoading(true);
     try {
       await signInWithPopup(auth, googleProvider);
-      toast.success("Successfully signed in!");
-      navigate("/dashboard");
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to sign in with Google. Please try again.");
+      toast({ title: "Welcome!", description: "Successfully signed in with Google." });
+    } catch (error: any) {
+      toast({ 
+        variant: "destructive", 
+        title: "Authentication Error", 
+        description: error.message 
+      });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left panel */}
-      <div className="hidden lg:flex lg:w-1/2 hero-gradient relative overflow-hidden flex-col items-center justify-center p-12">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_hsl(175_60%_50%_/_0.3),_transparent_60%)]" />
-        <div className="relative z-10 text-center">
-          <div className="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-white/20 backdrop-blur-sm mb-8 animate-float">
-            <QrCode className="h-10 w-10 text-white" />
-          </div>
-          <h2 className="text-4xl font-bold text-white mb-4 leading-tight">
-            Collect More<br />Google Reviews
-          </h2>
-          <p className="text-white/75 text-lg max-w-sm mx-auto leading-relaxed">
-            Generate smart QR codes with pre-written messages. Make it effortless for customers to leave reviews.
+    <div className="min-h-screen grid lg:grid-cols-2">
+      {/* Left Side - Brand */}
+      <div className="hidden lg:flex flex-col justify-center px-16 bg-zinc-950 text-white relative overflow-hidden">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-20"></div>
+        <div className="relative z-10 max-w-xl">
+          <h1 className="text-6xl font-bold tracking-tight mb-6">
+            DumpA<span className="text-primary">Review</span>
+          </h1>
+          <p className="text-xl text-zinc-400 font-light leading-relaxed">
+            Write reviews. Get paid. Join the gig economy platform where your opinion matters.
           </p>
-          <div className="mt-10 grid grid-cols-3 gap-4 text-center">
-            {[["100+", "Messages"], ["∞", "Scans"], ["0", "Setup Time"]].map(([val, label]) => (
-              <div key={label} className="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-5 border border-white/20">
-                <div className="text-2xl font-bold text-white">{val}</div>
-                <div className="text-white/65 text-xs mt-1">{label}</div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
 
-      {/* Right panel */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-background">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-10">
-            <div className="flex items-center justify-center gap-2.5 mb-6 lg:hidden">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl hero-gradient shadow-primary">
-                <QrCode className="h-5 w-5 text-white" />
+      {/* Right Side - Auth Form */}
+      <div className="flex items-center justify-center p-8 bg-zinc-50 dark:bg-zinc-900">
+        <Card className="w-full max-w-md shadow-xl border-zinc-200 dark:border-zinc-800">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-2xl font-bold tracking-tight">
+              {isReset ? "Reset Password" : isSignUp ? "Create an account" : "Welcome back"}
+            </CardTitle>
+            <CardDescription className="text-zinc-500 dark:text-zinc-400">
+              {isReset 
+                ? "Enter your email to reset your password" 
+                : isSignUp 
+                ? "Enter your details to get started" 
+                : "Enter your credentials to access your account"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleAuth} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
               </div>
-              <span className="font-bold text-2xl text-gradient">QReview Pro</span>
-            </div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">Welcome back</h1>
-            <p className="text-muted-foreground">Sign in to manage your QR codes and reviews</p>
-          </div>
-
-          <div className="glass-card rounded-2xl p-8">
-            <Button
-              onClick={handleGoogleSignIn}
-              disabled={loading}
-              className="w-full h-12 text-base font-medium bg-white hover:bg-gray-50 text-gray-700 border border-border shadow-sm"
-              variant="outline"
-            >
-              {loading ? (
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent mr-3" />
-              ) : (
-                <Chrome className="h-5 w-5 mr-3 text-[#4285F4]" />
+              {!isReset && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">Password</Label>
+                    {!isSignUp && (
+                      <button
+                        type="button"
+                        onClick={() => setIsReset(true)}
+                        className="text-sm text-primary hover:underline"
+                      >
+                        Forgot password?
+                      </button>
+                    )}
+                  </div>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
               )}
-              Continue with Google
-            </Button>
-
-            <div className="mt-6 text-center">
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                By signing in, you agree to our Terms of Service and Privacy Policy.
-                Your Google account is used only for authentication.
-              </p>
-            </div>
-          </div>
-
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Don't have an account?{" "}
-            <button
-              onClick={handleGoogleSignIn}
-              className="text-primary font-medium hover:underline"
-            >
-              Sign up with Google
-            </button>
-          </p>
-        </div>
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isReset ? "Send Reset Link" : isSignUp ? "Sign Up" : "Sign In"}
+              </Button>
+              
+              {!isReset && (
+                <>
+                  <div className="relative my-4">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t border-zinc-200 dark:border-zinc-800" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-zinc-50 dark:bg-zinc-900 px-2 text-zinc-500">Or continue with</span>
+                    </div>
+                  </div>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    className="w-full" 
+                    onClick={handleGoogleSignIn}
+                    disabled={isLoading}
+                  >
+                    <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                      <path d="M1 1h22v22H1z" fill="none"/>
+                    </svg>
+                    Google
+                  </Button>
+                </>
+              )}
+            </form>
+          </CardContent>
+          <CardFooter className="flex justify-center border-t p-4">
+            {isReset ? (
+              <button
+                type="button"
+                onClick={() => setIsReset(false)}
+                className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+              >
+                Back to login
+              </button>
+            ) : (
+              <div className="text-sm text-zinc-500">
+                {isSignUp ? "Already have an account? " : "Don't have an account? "}
+                <button
+                  type="button"
+                  onClick={() => setIsSignUp(!isSignUp)}
+                  className="font-medium text-primary hover:underline"
+                >
+                  {isSignUp ? "Sign in" : "Sign up"}
+                </button>
+              </div>
+            )}
+          </CardFooter>
+        </Card>
       </div>
     </div>
   );
