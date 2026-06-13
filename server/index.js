@@ -40,6 +40,23 @@ async function sendPushNotification(userId, title, body) {
   }
 }
 
+async function notifyAdmin(title, body) {
+  if (!process.env.ADMIN_EMAIL) return;
+  try {
+    const { data: adminProfile } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('email', process.env.ADMIN_EMAIL)
+      .single();
+      
+    if (adminProfile) {
+      await sendPushNotification(adminProfile.id, title, body);
+    }
+  } catch (err) {
+    console.error('Error notifying admin:', err);
+  }
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -366,6 +383,8 @@ app.get('/api/user/profile', requireAuth, async (req, res) => {
         .single();
       if (insertError) throw insertError;
       data = newData;
+      // Notify admin of new user
+      await notifyAdmin('New User Registration 👤', `A new user (${req.user.email}) has joined DumpAReview.`);
     } else if (error) {
       throw error;
     }
@@ -492,6 +511,10 @@ app.post('/api/submissions', requireAuth, async (req, res) => {
       .select()
       .single();
     if (error) throw error;
+    
+    // Notify Admin of new submission
+    await notifyAdmin('New Review Submitted 📝', `A new review is waiting in the queue for campaign ID: ${campaign_id}.`);
+    
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -633,7 +656,16 @@ app.post('/api/admin/queue/:id/approve', requireAuth, requireAdmin, async (req, 
     if (camp) await supabase.from('campaigns').update({ current_count: camp.current_count + 1 }).eq('id', sub.campaigns.id);
 
     const { data: usr } = await supabase.from('user_profiles').select('current_streak, lifetime_reviews').eq('user_id', sub.user_profiles.user_id).single();
-    if (usr) await supabase.from('user_profiles').update({ current_streak: usr.current_streak + 1, lifetime_reviews: usr.lifetime_reviews + 1 }).eq('user_id', sub.user_profiles.user_id);
+    if (usr) {
+      const newStreak = usr.current_streak + 1;
+      await supabase.from('user_profiles').update({ current_streak: newStreak, lifetime_reviews: usr.lifetime_reviews + 1 }).eq('user_id', sub.user_profiles.user_id);
+      
+      // If completed 10 reviews
+      if (newStreak === 10) {
+        await notifyAdmin('Payout Milestone Reached! 🏆', `User ${sub.user_profiles.email} has completed 10 reviews.`);
+        await sendPushNotification(sub.user_profiles.user_id, 'Milestone Reached! 🎉', 'You have completed 10 reviews! Admin will review your account for payout.');
+      }
+    }
     
     res.json({ success: true });
   } catch (err) {
@@ -646,6 +678,9 @@ app.post('/api/admin/queue/:id/reject', requireAuth, requireAdmin, async (req, r
     const { sub } = req.body;
     await supabase.from('submissions').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', sub.id);
     await supabase.from('review_messages').update({ status: 'available', assigned_to: null, assigned_at: null }).eq('id', sub.review_messages.id);
+    
+    await sendPushNotification(sub.user_profiles.user_id, 'Review Rejected ❌', 'Your recent review submission was rejected. Please check your active tasks to try again.');
+    
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -682,6 +717,9 @@ app.post('/api/admin/audit/:uid/clear', requireAuth, requireAdmin, async (req, r
   try {
     await supabase.from('payouts').insert([{ user_id: req.params.uid, amount: 50, receipt_url: '', status: 'pending' }]);
     await supabase.from('user_profiles').update({ current_streak: 0 }).eq('user_id', req.params.uid);
+    
+    await sendPushNotification(req.params.uid, 'Account Audited & Payout Initiated 💸', 'Admin has verified your 10 reviews and initiated a ₹50 payout to your PhonePe account.');
+    
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -693,6 +731,9 @@ app.post('/api/admin/audit/:uid/dispute', requireAuth, requireAdmin, async (req,
     const { submissionId, adminMsg, currentStreak } = req.body;
     await supabase.from('review_disputes').insert([{ user_id: req.params.uid, submission_id: submissionId, admin_message: adminMsg }]);
     await supabase.from('user_profiles').update({ current_streak: Math.max(0, currentStreak - 1) }).eq('user_id', req.params.uid);
+    
+    await sendPushNotification(req.params.uid, 'Review Disputed ⚠️', `Admin message: ${adminMsg}`);
+    
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -716,7 +757,16 @@ app.get('/api/admin/proofs', requireAuth, requireAdmin, async (req, res) => {
 app.post('/api/admin/proofs/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { publicUrl } = req.body;
+    
+    // Get the payout to notify the right user
+    const { data: payout } = await supabase.from('payouts').select('user_id, amount').eq('id', req.params.id).single();
+    
     await supabase.from('payouts').update({ status: 'completed', receipt_url: publicUrl }).eq('id', req.params.id);
+    
+    if (payout) {
+      await sendPushNotification(payout.user_id, 'Payout Completed! 💰', `Your payout of ₹${payout.amount} has been sent and the receipt is available.`);
+    }
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
