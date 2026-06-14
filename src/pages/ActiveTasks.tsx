@@ -166,7 +166,7 @@ export default function ActiveTasks() {
       
       const formData = new FormData();
       formData.append('campaign_id', selectedCampaign.id);
-      formData.append('image', imageFile);
+      formData.append('screenshot', imageFile);
       if (user?.uid) formData.append('referrer_uid', user.uid);
       if (crop) {
         formData.append('crop_coords', JSON.stringify({
