@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Loader2, ArrowRight, Target, Store, QrCode, Copy, ExternalLink, UploadCloud, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, ArrowRight, Target, Store, QrCode, Copy, ExternalLink, UploadCloud, AlertCircle, CheckCircle2, Download } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
@@ -62,6 +62,91 @@ export default function ActiveTasks() {
     setImageFile(null);
     setReviewerName("");
     setNameExistsError("");
+  };
+
+  const downloadQRImage = async (camp: any) => {
+    try {
+      const qrCanvas = document.getElementById(`qr-hidden-${camp.id}`) as HTMLCanvasElement;
+      if (!qrCanvas) return;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 600;
+      canvas.height = 800;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = "/pwa-192.png";
+      
+      await new Promise((resolve) => {
+        img.onload = resolve;
+        img.onerror = resolve; // Continue even if logo fails
+      });
+
+      let startY = 80;
+
+      if (img.width) {
+        ctx.drawImage(img, canvas.width / 2 - 180, startY - 25, 80, 80);
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 42px Inter, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('DumpAReviews', canvas.width / 2 - 80, startY + 30);
+      } else {
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 48px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('DumpAReviews', canvas.width / 2, startY + 30);
+      }
+
+      // Draw Website Name
+      ctx.fillStyle = '#666666';
+      ctx.font = '24px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('dumpareviews.jaggu.me', canvas.width / 2, startY + 80);
+
+      // Draw QR Code
+      const qrSize = 400;
+      ctx.drawImage(qrCanvas, canvas.width / 2 - qrSize / 2, startY + 150, qrSize, qrSize);
+
+      // Draw Company Name
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 36px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      
+      const words = camp.company_name.split(' ');
+      let line = '';
+      let y = startY + 620;
+      for(let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        if(metrics.width > canvas.width - 80 && n > 0) {
+          ctx.fillText(line.trim(), canvas.width / 2, y);
+          line = words[n] + ' ';
+          y += 45;
+        } else {
+          line = testLine;
+        }
+      }
+      ctx.fillText(line.trim(), canvas.width / 2, y);
+
+      const dataUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `${camp.company_name}-QR.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      toast({ title: "Success", description: "QR Code downloaded!" });
+    } catch (err) {
+      console.error("Error generating image:", err);
+      toast({ title: "Download failed", description: "Could not generate QR image.", variant: "destructive" });
+    }
   };
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -285,6 +370,7 @@ export default function ActiveTasks() {
 
                   <div className="flex flex-col items-center p-1.5 bg-white rounded border shadow-sm">
                     <QRCodeCanvas value={reviewUrl} size={60} className="mb-1" />
+                    <QRCodeCanvas id={`qr-hidden-${camp.id}`} value={reviewUrl} size={512} style={{ display: 'none' }} />
                     <div className="flex gap-1 w-full mt-1">
                       <Button variant="outline" size="sm" className="flex-1 h-6 text-[9px] px-1" onClick={() => copyToClipboard(reviewUrl)}>
                         <Copy className="h-2.5 w-2.5 mr-1" /> Copy
@@ -293,6 +379,9 @@ export default function ActiveTasks() {
                         <ExternalLink className="h-2.5 w-2.5 mr-1" /> Open
                       </Button>
                     </div>
+                    <Button variant="secondary" size="sm" className="w-full h-6 text-[9px] mt-1" onClick={() => downloadQRImage(camp)}>
+                      <Download className="h-2.5 w-2.5 mr-1" /> Download QR
+                    </Button>
                   </div>
                 </CardContent>
                 <CardFooter className="p-1.5 pt-0">
