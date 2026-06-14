@@ -11,6 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription, DialogHeader } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
+import ReactCrop, { type Crop, PixelCrop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
+import { useRef } from 'react';
 
 export default function IssuedView() {
   const { user } = useAuth();
@@ -27,6 +30,12 @@ export default function IssuedView() {
   const [uploading, setUploading] = useState(false);
   const [submission, setSubmission] = useState<any>(null);
   const [allSubmissions, setAllSubmissions] = useState<any[]>([]);
+
+  const [crop, setCrop] = useState<Crop>();
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
+  const [imgSrc, setImgSrc] = useState('');
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   useEffect(() => {
     const initializeTask = async () => {
@@ -67,36 +76,44 @@ export default function IssuedView() {
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !user || !campaign || !assignedMessage) return;
     const file = e.target.files[0];
     
+    setSelectedFile(file);
+    setCrop(undefined);
+    setCompletedCrop(undefined);
+    
+    const reader = new FileReader();
+    reader.addEventListener('load', () => setImgSrc(reader.result?.toString() || ''));
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedFile || !user || !campaign || !assignedMessage) return;
     setUploading(true);
     try {
-      // 1. Upload to Storage
-      const bucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET;
-      const fileExt = file.name.split('.').pop();
-      const fileName = `review_${user.uid}_${Date.now()}.${fileExt}`;
-      const filePath = `reviews/${fileName}`;
+      const formData = new FormData();
+      formData.append('screenshot', selectedFile);
+      formData.append('campaign_id', campaign.id);
+      formData.append('message_id', assignedMessage.id);
+      
+      if (completedCrop && imgRef.current) {
+        const scaleX = imgRef.current.naturalWidth / imgRef.current.width;
+        const scaleY = imgRef.current.naturalHeight / imgRef.current.height;
+        
+        const actualCrop = {
+          x: completedCrop.x * scaleX,
+          y: completedCrop.y * scaleY,
+          width: completedCrop.width * scaleX,
+          height: completedCrop.height * scaleY,
+        };
+        formData.append('crop_coords', JSON.stringify(actualCrop));
+      }
 
-      const { error: uploadError } = await supabase.storage
-        .from(bucket)
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(filePath);
-
-      // 2. Create Submission
       const newSub = await apiFetch('/api/submissions', {
         method: 'POST',
-        body: JSON.stringify({
-          campaign_id: campaign.id,
-          message_id: assignedMessage.id,
-          screenshot_url: publicUrl
-        })
+        body: formData
       });
 
       setSubmission(newSub);
@@ -283,29 +300,56 @@ export default function IssuedView() {
               <CardDescription>Take a screenshot of your published Google Review and upload it here.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Label htmlFor="proof-upload" className="block cursor-pointer">
-                <div className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-12 flex flex-col items-center justify-center gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                  {uploading ? (
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  ) : (
-                    <>
+              {!imgSrc ? (
+                <>
+                  <Label htmlFor="proof-upload" className="block cursor-pointer">
+                    <div className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-12 flex flex-col items-center justify-center gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
                       <Upload className="h-8 w-8 text-zinc-400" />
                       <div className="text-center">
                         <span className="font-medium text-primary">Click to upload</span> or drag and drop
                         <p className="text-xs text-muted-foreground mt-1">PNG, JPG up to 5MB</p>
                       </div>
-                    </>
-                  )}
+                    </div>
+                  </Label>
+                  <Input 
+                    id="proof-upload" 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={handleFileUpload} 
+                    disabled={uploading}
+                  />
+                </>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-zinc-50 dark:bg-zinc-900 border rounded-lg p-4">
+                    <p className="text-sm text-center mb-4 font-medium">Please drag a box over your review name if visible. This speeds up verification.</p>
+                    <div className="flex justify-center overflow-auto max-h-[500px]">
+                      <ReactCrop
+                        crop={crop}
+                        onChange={(_, percentCrop) => setCrop(percentCrop)}
+                        onComplete={(c) => setCompletedCrop(c)}
+                      >
+                        <img
+                          ref={imgRef}
+                          alt="Crop me"
+                          src={imgSrc}
+                          className="max-w-full"
+                        />
+                      </ReactCrop>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setImgSrc('')} disabled={uploading}>
+                      Choose Another Image
+                    </Button>
+                    <Button className="flex-1" onClick={handleSubmit} disabled={uploading}>
+                      {uploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                      Submit Review
+                    </Button>
+                  </div>
                 </div>
-              </Label>
-              <Input 
-                id="proof-upload" 
-                type="file" 
-                accept="image/*" 
-                className="hidden" 
-                onChange={handleFileUpload} 
-                disabled={uploading}
-              />
+              )}
             </CardContent>
           </Card>
         </>

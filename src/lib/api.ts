@@ -12,11 +12,18 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
 
   console.log('[apiFetch] user:', user?.uid, 'token:', token ? 'exists' : 'missing');
 
-  const headers = {
-    'Content-Type': 'application/json',
+  const isFormData = options.body instanceof FormData;
+
+  const headers: any = {
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...options.headers,
   };
+
+  if (!isFormData && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  } else if (isFormData && headers['Content-Type'] === 'application/json') {
+    delete headers['Content-Type'];
+  }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,

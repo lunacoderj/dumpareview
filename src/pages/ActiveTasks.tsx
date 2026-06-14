@@ -8,7 +8,8 @@ import { Loader2, ArrowRight, Target, Store, QrCode, Copy, ExternalLink, UploadC
 import { QRCodeCanvas } from "qrcode.react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import Tesseract from 'tesseract.js';
+import ReactCrop, { type Crop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
 import axios from 'axios';
 import { supabase } from "@/lib/supabase/client";
 
@@ -27,9 +28,8 @@ export default function ActiveTasks() {
   // Upload states
   const [uploading, setUploading] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [reviewerName, setReviewerName] = useState("");
-  const [nameCheckLoading, setNameCheckLoading] = useState(false);
-  const [nameExistsError, setNameExistsError] = useState("");
+  const [imageSrc, setImageSrc] = useState<string>("");
+  const [crop, setCrop] = useState<Crop>();
 
   useEffect(() => {
     const fetchActiveCampaigns = async () => {
@@ -60,8 +60,8 @@ export default function ActiveTasks() {
     setSelectedCampaign(camp);
     setIsSubmitModalOpen(true);
     setImageFile(null);
-    setReviewerName("");
-    setNameExistsError("");
+    setImageSrc("");
+    setCrop(undefined);
   };
 
   const downloadQRImage = async (camp: any) => {
@@ -153,158 +153,31 @@ export default function ActiveTasks() {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setImageFile(file);
-      await extractText(file);
+      const reader = new FileReader();
+      reader.addEventListener('load', () => setImageSrc(reader.result?.toString() || ''));
+      reader.readAsDataURL(file);
     }
-  };
-
-  const extractText = async (file: File) => {
-    try {
-      setUploading(true);
-      const worker = await Tesseract.createWorker('eng');
-      const { data: { text } } = await worker.recognize(file);
-      await worker.terminate();
-
-      const fullTextLower = text.toLowerCase();
-      const companyNameLower = selectedCampaign?.company_name?.toLowerCase() || '';
-      const companyWords = companyNameLower.split(/[^a-z0-9]+/).filter((w: string) => w.length > 2);
-      
-      let companyFound = false;
-      if (fullTextLower.includes(companyNameLower)) {
-        companyFound = true;
-      } else if (companyWords.length > 0) {
-        let matchCount = 0;
-        companyWords.forEach((w: string) => {
-          if (fullTextLower.includes(w)) matchCount++;
-        });
-        // Require at least 2 significant words to match, or all words if less than 2
-        if (matchCount >= Math.min(2, companyWords.length)) {
-          companyFound = true;
-        }
-      }
-
-      if (!companyFound) {
-        toast({ title: "Company Mismatch", description: "Could not detect the company name in the screenshot. Please upload the correct review image.", variant: "destructive" });
-        setReviewerName("");
-        setNameExistsError("");
-        return;
-      }
-
-      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      let foundName = "";
-      
-      for (let i = 0; i < lines.length; i++) {
-        const lowerLine = lines[i].toLowerCase();
-        if (lowerLine.includes('posting publicly') || lowerLine.includes('local guide') || lowerLine.includes('reviews')) {
-          if (i > 0) {
-            foundName = lines[i-1];
-            // Clean up leading isolated letters from profile avatars (like 'J Jagadhesh')
-            foundName = foundName.replace(/^[A-Za-z]\s+/, '');
-            break;
-          }
-        }
-      }
-
-      if (foundName) {
-        setReviewerName(foundName);
-        checkNameExists(foundName);
-        toast({ title: "Name detected", description: `Detected name: ${foundName}` });
-      } else {
-        setReviewerName("");
-        setNameExistsError("");
-        toast({ title: "Name not auto-detected", description: "Could not automatically detect the name. Please type it exactly as it appears.", variant: "destructive" });
-      }
-    } catch (err) {
-      console.error("OCR Error:", err);
-      toast({ title: "Error scanning image", variant: "destructive" });
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const checkNameExists = async (name: string) => {
-    if (!selectedCampaign || !name.trim()) return;
-    
-    setNameCheckLoading(true);
-    try {
-      const formattedName = name.trim().toLowerCase();
-      const res = await axios.get(`${BACKEND_URL}/api/public/check-email?campaign_id=${selectedCampaign.id}&email=${encodeURIComponent(formattedName)}`);
-      if (res.data.exists) {
-        setNameExistsError("This reviewer name has already been submitted for this company.");
-      } else {
-        setNameExistsError("");
-      }
-    } catch (e) {
-      console.error("Error checking name", e);
-      setNameExistsError("");
-    } finally {
-      setNameCheckLoading(false);
-    }
-  };
-
-  const standardizeImage = (file: File): Promise<File> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return resolve(file);
-        
-        ctx.drawImage(img, 0, 0);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
-              type: 'image/jpeg',
-              lastModified: Date.now(),
-            });
-            resolve(newFile);
-          } else {
-            resolve(file);
-          }
-        }, 'image/jpeg', 0.85); // Compress slightly and standardize to JPEG
-      };
-      img.onerror = () => resolve(file);
-      img.src = url;
-    });
-  };
-
-  const uploadScreenshot = async (file: File) => {
-    const bucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'review-assets';
-    
-    // Convert to a standardized JPEG format before uploading
-    const standardizedFile = await standardizeImage(file);
-    const fileName = `user_review_${Date.now()}.jpg`;
-    const filePath = `reviews/${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from(bucket)
-      .upload(filePath, standardizedFile);
-
-    if (uploadError) throw uploadError;
-
-    const { data: { publicUrl } } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(filePath);
-      
-    return publicUrl;
   };
 
   const handleSubmitResponse = async () => {
-    if (!imageFile || !selectedCampaign || !reviewerName.trim()) return;
+    if (!imageFile || !selectedCampaign) return;
     try {
       setUploading(true);
-      const imageUrl = await uploadScreenshot(imageFile);
-      const formattedName = reviewerName.trim().toLowerCase();
       
-      await axios.post(`${BACKEND_URL}/api/public/submissions`, {
-        campaign_id: selectedCampaign.id,
-        screenshot_url: imageUrl,
-        extracted_email: formattedName, // Storing name in the email column
-        referrer_uid: user?.uid
-      });
+      const formData = new FormData();
+      formData.append('campaign_id', selectedCampaign.id);
+      formData.append('image', imageFile);
+      if (user?.uid) formData.append('referrer_uid', user.uid);
+      if (crop) {
+        formData.append('crop_coords', JSON.stringify({
+          x: crop.x,
+          y: crop.y,
+          width: crop.width,
+          height: crop.height,
+        }));
+      }
+
+      await axios.post(`${BACKEND_URL}/api/public/submissions`, formData);
       
       toast({ title: "Successfully submitted response!" });
       setIsSubmitModalOpen(false);
@@ -423,55 +296,18 @@ export default function ActiveTasks() {
               </label>
             </div>
             
-            {imageFile && (
-              <div className="text-center text-sm font-medium text-blue-600">
-                Selected: {imageFile.name}
-              </div>
-            )}
-
-            {imageFile && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Reviewer Name</label>
-                <input 
-                  type="text" 
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="e.g. Jagadhesh Bellane"
-                  value={reviewerName}
-                  onChange={(e) => {
-                    setReviewerName(e.target.value);
-                    if (e.target.value.trim().length > 2) {
-                      checkNameExists(e.target.value);
-                    } else {
-                      setNameExistsError("");
-                    }
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">Verify and correct the name if OCR missed it. Must exactly match the review.</p>
-              </div>
-            )}
-
-            {nameCheckLoading && (
-              <div className="flex justify-center items-center py-2 text-sm text-muted-foreground">
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verifying name...
-              </div>
-            )}
-
-            {reviewerName.trim().length > 2 && !nameCheckLoading && !nameExistsError && (
-              <div className="bg-green-50 text-green-800 p-2 rounded text-sm text-center">
-                Name Approved: <strong>{reviewerName}</strong>
-              </div>
-            )}
-
-            {nameExistsError && !nameCheckLoading && (
-              <div className="bg-red-50 text-red-800 p-2 rounded text-sm text-center border border-red-200">
-                <strong>Duplicate found:</strong> {reviewerName}
-                <p className="text-xs mt-1">{nameExistsError}</p>
+            {imageSrc && (
+              <div className="flex flex-col items-center mt-4">
+                <p className="text-sm font-medium text-muted-foreground mb-2">Please crop the reviewer name in the image below:</p>
+                <ReactCrop crop={crop} onChange={(c) => setCrop(c)}>
+                  <img src={imageSrc} style={{ maxHeight: '400px' }} />
+                </ReactCrop>
               </div>
             )}
 
             <Button 
               className="w-full" 
-              disabled={!imageFile || uploading || reviewerName.trim().length < 3 || nameCheckLoading || !!nameExistsError}
+              disabled={!imageFile || uploading}
               onClick={handleSubmitResponse}
             >
               {uploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "Submit Response"}

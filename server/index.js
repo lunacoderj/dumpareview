@@ -6,6 +6,13 @@ const { createClient } = require('@supabase/supabase-js');
 const { Resend } = require('resend');
 const admin = require('firebase-admin');
 const { getAuth } = require('firebase-admin/auth');
+const multer = require('multer');
+const exifr = require('exifr');
+const imghash = require('imghash');
+const Tesseract = require('tesseract.js');
+const { Jimp } = require('jimp');
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Helper to send Push Notification
 async function sendPushNotification(userId, title, body) {
@@ -565,10 +572,92 @@ app.get('/api/campaigns/:id/task', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/submissions', requireAuth, async (req, res) => {
+async function processImageSubmission(buffer, cropCoordsStr, campaign_company_name) {
+  let is_flagged = false;
   try {
-    const { campaign_id, message_id, screenshot_url, extracted_email } = req.body;
+    const exifData = await exifr.parse(buffer);
+    if (exifData && exifData.Software) {
+      is_flagged = true;
+    }
+  } catch (e) {}
+
+  let image_hash = null;
+  try {
+    image_hash = await imghash.hash(buffer);
+  } catch (e) {
+    console.error("Error hashing image:", e);
+  }
+
+  let jimpImage = await Jimp.read(buffer);
+  if (cropCoordsStr) {
+    try {
+      const coords = JSON.parse(cropCoordsStr);
+      if (coords.width && coords.height) {
+        jimpImage.crop({ x: Math.round(coords.x), y: Math.round(coords.y), w: Math.round(coords.width), h: Math.round(coords.height) });
+      }
+    } catch(e) {
+      console.error("Error cropping image:", e);
+    }
+  }
+
+  if (jimpImage.bitmap.width > 1024) {
+    jimpImage.resize({ w: 1024 });
+  }
+  const processedBuffer = await jimpImage.getBuffer('image/jpeg', { quality: 80 });
+
+  let extracted_name = null;
+  let ocr_verified = false;
+  try {
+    const { data: { text } } = await Tesseract.recognize(processedBuffer, 'eng');
+    if (campaign_company_name && text.toLowerCase().includes(campaign_company_name.toLowerCase())) {
+      ocr_verified = true;
+    }
+    const byMatch = text.match(/By\s+([A-Z][a-z]+(\s[A-Z][a-z]+)*)/i);
+    if (byMatch) {
+      extracted_name = byMatch[1];
+    }
+  } catch (e) {
+    console.error("OCR Error:", e);
+  }
+
+  const filename = `submissions/${Date.now()}_${Math.floor(Math.random()*10000)}.jpg`;
+  const { data: uploadData, error: uploadError } = await supabase.storage
+    .from('screenshots')
+    .upload(filename, processedBuffer, {
+      contentType: 'image/jpeg',
+      upsert: false
+    });
+
+  if (uploadError) throw new Error("Failed to upload image: " + uploadError.message);
+
+  const { data: publicUrlData } = supabase.storage.from('screenshots').getPublicUrl(filename);
+  
+  return {
+    screenshot_url: publicUrlData.publicUrl,
+    is_flagged,
+    image_hash,
+    ocr_verified,
+    extracted_name
+  };
+}
+
+app.post('/api/submissions', requireAuth, upload.single('screenshot'), async (req, res) => {
+  try {
+    const { campaign_id, message_id, extracted_email, crop_coords } = req.body;
     
+    const { data: camp } = await supabase.from('campaigns').select('company_name').eq('id', campaign_id).single();
+    
+    let screenshot_url = req.body.screenshot_url;
+    let is_flagged = false;
+    let image_hash = null;
+
+    if (req.file) {
+      const result = await processImageSubmission(req.file.buffer, crop_coords, camp?.company_name);
+      screenshot_url = result.screenshot_url;
+      is_flagged = result.is_flagged;
+      image_hash = result.image_hash;
+    }
+
     if (extracted_email) {
       // Check if email already exists for this campaign
       const { data: existing } = await supabase
@@ -592,6 +681,8 @@ app.post('/api/submissions', requireAuth, async (req, res) => {
         message_id,
         screenshot_url,
         extracted_email,
+        image_hash,
+        is_flagged,
         status: 'pending'
       }])
       .select()
@@ -603,6 +694,7 @@ app.post('/api/submissions', requireAuth, async (req, res) => {
     
     res.json(data);
   } catch (err) {
+    console.error("Submission Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -640,9 +732,9 @@ app.get('/api/public/campaigns/:id/task', async (req, res) => {
   }
 });
 
-app.post('/api/public/submissions', async (req, res) => {
+app.post('/api/public/submissions', upload.single('screenshot'), async (req, res) => {
   try {
-    const { campaign_id, screenshot_url, extracted_email, referrer_uid } = req.body;
+    const { campaign_id, extracted_email, referrer_uid, crop_coords } = req.body;
     let { message_id } = req.body;
 
     if (!referrer_uid) {
@@ -676,6 +768,19 @@ app.post('/api/public/submissions', async (req, res) => {
       }
     }
 
+    const { data: camp } = await supabase.from('campaigns').select('company_name').eq('id', campaign_id).single();
+
+    let screenshot_url = req.body.screenshot_url;
+    let is_flagged = false;
+    let image_hash = null;
+
+    if (req.file) {
+      const result = await processImageSubmission(req.file.buffer, crop_coords, camp?.company_name);
+      screenshot_url = result.screenshot_url;
+      is_flagged = result.is_flagged;
+      image_hash = result.image_hash;
+    }
+
     if (extracted_email) {
       const { data: existing } = await supabase
         .from('submissions')
@@ -699,6 +804,8 @@ app.post('/api/public/submissions', async (req, res) => {
         message_id,
         screenshot_url,
         extracted_email,
+        image_hash,
+        is_flagged,
         status: 'pending'
       }])
       .select()
@@ -706,12 +813,15 @@ app.post('/api/public/submissions', async (req, res) => {
     if (error) throw error;
 
     // Optional: mark message as completed
-    await supabase.from('review_messages').update({ status: 'completed' }).eq('id', message_id);
+    if (message_id) {
+      await supabase.from('review_messages').update({ status: 'completed' }).eq('id', message_id);
+    }
 
     await notifyAdmin('New Public Review Submitted 📝', `A new public review is waiting in the queue for campaign ID: ${campaign_id}.`);
 
     res.json(data);
   } catch (err) {
+    console.error("Public Submission Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -905,7 +1015,7 @@ app.get('/api/admin/queue', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('submissions')
-      .select('id, screenshot_url, submitted_at, twelve_hour_check_triggered, status, rejection_reason, extracted_email, user_profiles ( user_id, full_name, email ), campaigns ( id, company_name ), review_messages ( id, message_text )')
+      .select('id, screenshot_url, submitted_at, twelve_hour_check_triggered, status, rejection_reason, extracted_email, image_hash, is_flagged, user_profiles ( user_id, full_name, email ), campaigns ( id, company_name ), review_messages ( id, message_text )')
       .order('submitted_at', { ascending: false })
       .limit(1000);
     if (error) throw error;
@@ -954,6 +1064,76 @@ app.post('/api/admin/queue/:id/reject', requireAuth, requireAdmin, async (req, r
     }
     
     await sendPushNotification(sub.user_profiles.user_id, 'Review Rejected ❌', `Your recent review submission was rejected. Reason: ${reason}. Please check your active tasks to try again.`);
+    
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/queue/bulk-approve', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { submissionIds } = req.body;
+    if (!submissionIds || !submissionIds.length) return res.status(400).json({ error: "No submissions provided" });
+
+    const { data: subs, error: fetchErr } = await supabase
+      .from('submissions')
+      .select('id, campaigns(id, company_name), user_profiles(user_id, current_streak, lifetime_reviews, email), review_messages(id)')
+      .in('id', submissionIds);
+      
+    if (fetchErr) throw fetchErr;
+
+    for (const sub of subs) {
+      await supabase.from('submissions').update({ status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', sub.id);
+      if (sub.review_messages) {
+        await supabase.from('review_messages').update({ status: 'completed' }).eq('id', sub.review_messages.id);
+      }
+      
+      if (sub.campaigns) {
+        const { data: camp } = await supabase.from('campaigns').select('current_count').eq('id', sub.campaigns.id).single();
+        if (camp) await supabase.from('campaigns').update({ current_count: camp.current_count + 1 }).eq('id', sub.campaigns.id);
+      }
+
+      if (sub.user_profiles) {
+        const newStreak = sub.user_profiles.current_streak + 1;
+        await supabase.from('user_profiles').update({ current_streak: newStreak, lifetime_reviews: sub.user_profiles.lifetime_reviews + 1 }).eq('user_id', sub.user_profiles.user_id);
+        
+        await sendPushNotification(sub.user_profiles.user_id, 'Review Approved! ✅', `Your review submission for ${sub.campaigns.company_name} was approved. You are at ${newStreak}/10 reviews!`);
+
+        if (newStreak === 10) {
+          await notifyAdmin('Payout Milestone Reached! 🏆', `User ${sub.user_profiles.email} has completed 10 reviews.`);
+          await sendPushNotification(sub.user_profiles.user_id, 'Milestone Reached! 🎉', 'You have completed 10 reviews! Admin will review your account for payout.');
+        }
+      }
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/queue/bulk-reject', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { submissionIds, reason } = req.body;
+    if (!submissionIds || !submissionIds.length) return res.status(400).json({ error: "No submissions provided" });
+
+    const { data: subs, error: fetchErr } = await supabase
+      .from('submissions')
+      .select('id, user_profiles(user_id), review_messages(id)')
+      .in('id', submissionIds);
+      
+    if (fetchErr) throw fetchErr;
+
+    for (const sub of subs) {
+      await supabase.from('submissions').update({ status: 'rejected', rejection_reason: reason || 'Bulk Rejected', reviewed_at: new Date().toISOString() }).eq('id', sub.id);
+      if (sub.review_messages) {
+        await supabase.from('review_messages').update({ status: 'available', assigned_to: null, assigned_at: null }).eq('id', sub.review_messages.id);
+      }
+      
+      if (sub.user_profiles) {
+        await sendPushNotification(sub.user_profiles.user_id, 'Review Rejected ❌', `Your recent review submission was rejected. Reason: ${reason || 'Bulk Rejected'}. Please check your active tasks to try again.`);
+      }
+    }
     
     res.json({ success: true });
   } catch (err) {
