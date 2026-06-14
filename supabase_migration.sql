@@ -1,0 +1,2 @@
+ALTER TABLE user_profiles
+ADD COLUMN last_login TIMESTAMP WITH TIME ZONE;

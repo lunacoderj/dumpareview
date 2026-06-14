@@ -28,6 +28,7 @@ type UserProfile = {
   is_verified: boolean;
   created_at: string;
   updated_at: string;
+  last_login?: string;
 };
 
 export default function AdminUsers() {
@@ -85,6 +86,7 @@ export default function AdminUsers() {
                 <TableHead className="text-center">Total Reviews</TableHead>
                 <TableHead className="text-center">Total 10 Streaks</TableHead>
                 <TableHead className="text-right">Total Earned</TableHead>
+                <TableHead className="text-right">Last Login</TableHead>
                 <TableHead className="text-right">Last Updated</TableHead>
               </TableRow>
             </TableHeader>
@@ -143,6 +145,9 @@ export default function AdminUsers() {
                       </TableCell>
                       <TableCell className="text-right">
                         <span className="font-bold text-green-500">₹{totalEarned}</span>
+                      </TableCell>
+                      <TableCell className="text-right text-sm text-muted-foreground whitespace-nowrap">
+                        {user.last_login ? new Date(user.last_login).toLocaleString() : 'Never'}
                       </TableCell>
                       <TableCell className="text-right text-sm text-muted-foreground whitespace-nowrap">
                         {new Date(user.updated_at || user.created_at).toLocaleString()}

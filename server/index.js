@@ -376,17 +376,37 @@ app.get('/api/user/profile', requireAuth, async (req, res) => {
     
     if (error && error.code === 'PGRST116') {
       // Create if missing
-      const { data: newData, error: insertError } = await supabase
+      let { data: newData, error: insertError } = await supabase
         .from('user_profiles')
-        .insert([{ user_id: req.user.uid, email: req.user.email }])
+        .insert([{ user_id: req.user.uid, email: req.user.email, last_login: new Date().toISOString() }])
         .select()
         .single();
+        
+      if (insertError && insertError.message && insertError.message.includes('last_login')) {
+        // Fallback if last_login column hasn't been added to Supabase yet
+        const retry = await supabase
+          .from('user_profiles')
+          .insert([{ user_id: req.user.uid, email: req.user.email }])
+          .select()
+          .single();
+        newData = retry.data;
+        insertError = retry.error;
+      }
+      
       if (insertError) throw insertError;
       data = newData;
       // Notify admin of new user
       await notifyAdmin('New User Registration 👤', `A new user (${req.user.email}) has joined DumpAReview.`);
     } else if (error) {
       throw error;
+    } else {
+      // Update last_login on profile fetch to track user login/activity time
+      const currentLogin = new Date().toISOString();
+      await supabase
+        .from('user_profiles')
+        .update({ last_login: currentLogin })
+        .eq('user_id', req.user.uid);
+      data.last_login = currentLogin;
     }
     res.json(data);
   } catch (err) {
