@@ -25,8 +25,10 @@ import AdminProofs from "./pages/admin/AdminProofs";
 
 import Home from "./pages/Home";
 import Landing from "./pages/Landing";
+import PublicReview from "./pages/PublicReview";
 import NotFound from "./pages/NotFound";
 import AdminWallOfFame from "./pages/admin/AdminWallOfFame";
+import AdminUsers from "./pages/admin/AdminUsers";
 
 const queryClient = new QueryClient();
 
@@ -52,6 +54,9 @@ const App = () => (
             {/* Root Route handles both Landing and User Dashboard */}
             <Route path="/" element={<AppLayout><Home /></AppLayout>} />
             
+            {/* Public Review Route (No Auth Required) */}
+            <Route path="/review/:campaignId" element={<AppLayout><PublicReview /></AppLayout>} />
+            
             {/* User Routes */}
             <Route path="/tasks" element={<AppLayout><UserRoute><Home /></UserRoute></AppLayout>} />
             <Route path="/issued" element={<AppLayout><UserRoute><IssuedView /></UserRoute></AppLayout>} />
@@ -66,6 +71,7 @@ const App = () => (
             <Route path="/admin/audit" element={<AppLayout><AdminRoute><AdminAudit /></AdminRoute></AppLayout>} />
             <Route path="/admin/proofs" element={<AppLayout><AdminRoute><AdminProofs /></AdminRoute></AppLayout>} />
             <Route path="/admin/wall-of-fame" element={<AppLayout><AdminRoute><AdminWallOfFame /></AdminRoute></AppLayout>} />
+            <Route path="/admin/users" element={<AppLayout><AdminRoute><AdminUsers /></AdminRoute></AppLayout>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

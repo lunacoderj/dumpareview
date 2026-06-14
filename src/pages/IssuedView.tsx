@@ -8,6 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Loader2, Copy, ExternalLink, Upload, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription, DialogHeader } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Label } from "@/components/ui/label";
 
 export default function IssuedView() {
   const { user } = useAuth();
@@ -23,22 +26,29 @@ export default function IssuedView() {
   // Submission state
   const [uploading, setUploading] = useState(false);
   const [submission, setSubmission] = useState<any>(null);
+  const [allSubmissions, setAllSubmissions] = useState<any[]>([]);
 
   useEffect(() => {
     const initializeTask = async () => {
-      if (!user || !campaignId) {
+      if (!user) {
         navigate('/');
         return;
       }
 
       try {
-        const data = await apiFetch(`/api/campaigns/${campaignId}/task`);
-        if (data.submission) {
-          setSubmission(data.submission);
+        if (!campaignId) {
+          // Fetch all submissions history
+          const history = await apiFetch('/api/user/submissions');
+          setAllSubmissions(history || []);
+        } else {
+          // Fetch specific campaign task
+          const data = await apiFetch(`/api/campaigns/${campaignId}/task`);
+          if (data.submission) {
+            setSubmission(data.submission);
+          }
+          setAssignedMessage(data.message);
+          setCampaign(data.campaign);
         }
-        setAssignedMessage(data.message);
-        setCampaign(data.campaign);
-
       } catch (err: any) {
         toast({ title: "Error", description: err.message, variant: "destructive" });
       } finally {
@@ -111,13 +121,132 @@ export default function IssuedView() {
     }
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin h-8 w-8 text-primary" /></div>;
-  if (!campaign || !assignedMessage) return <div className="p-8 text-center">Task unavailable.</div>;
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+        <div className="space-y-4">
+          <div className="mb-6">
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-96" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
+              <Card key={i} className="flex flex-col overflow-hidden p-0">
+                <div className="flex flex-row p-2 gap-2 border-b items-center">
+                  <Skeleton className="w-12 h-12 rounded shrink-0" />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-2.5 w-2/3" />
+                  </div>
+                  <Skeleton className="w-12 h-4 rounded shrink-0" />
+                </div>
+                <div className="p-2 flex flex-col gap-2 flex-1">
+                  <Skeleton className="h-8 w-full rounded flex-1" />
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!campaignId && !loading && allSubmissions.length === 0) {
+    // If not specific campaign and no submissions, we handle below
+  } else if (campaignId && (!campaign || !assignedMessage)) {
+    return <div className="p-8 text-center">Task unavailable.</div>;
+  }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
       
-      {!submission ? (
+      {!campaignId ? (
+        <div className="space-y-4">
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold tracking-tight mb-2">My Requests</h1>
+            <p className="text-muted-foreground">Here is a list of your submissions and their current statuses.</p>
+          </div>
+          {allSubmissions.length === 0 ? (
+            <Card className="text-center p-8 text-muted-foreground">No submissions found.</Card>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+              {allSubmissions.map((sub: any) => (
+                <Card key={sub.id} className="flex flex-col overflow-hidden hover:shadow-md transition-shadow">
+                  
+                  {/* Top Row: Thumbnail + Info + Status */}
+                  <div className="flex flex-row p-2 gap-2 border-b bg-zinc-50/50 dark:bg-zinc-900/50 items-start">
+                    <div className="w-12 h-12 shrink-0 overflow-hidden relative group rounded shadow-sm bg-white border">
+                      {sub.screenshot_url ? (
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <div className="w-full h-full cursor-pointer relative">
+                              <img 
+                                src={sub.screenshot_url} 
+                                alt="Screenshot" 
+                                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" 
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span className="text-white text-[9px] font-medium px-1 rounded bg-black/50">View</span>
+                              </div>
+                            </div>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-3xl">
+                            <DialogHeader>
+                              <DialogTitle>Proof Screenshot</DialogTitle>
+                              <DialogDescription>{sub.campaigns?.company_name}</DialogDescription>
+                            </DialogHeader>
+                            <div className="flex justify-center mt-4">
+                              <img src={sub.screenshot_url} alt="Review Screenshot" className="max-w-full max-h-[70vh] object-contain rounded-md shadow-lg" />
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      ) : (
+                        <span className="text-[8px] text-zinc-500 text-center flex items-center justify-center h-full">No img</span>
+                      )}
+                    </div>
+                    
+                    <div className="min-w-0 flex-1 flex flex-col justify-center pt-0.5">
+                      <h3 className="font-semibold text-sm truncate leading-tight" title={sub.campaigns?.company_name}>
+                        {sub.campaigns?.company_name || 'Unknown Campaign'}
+                      </h3>
+                      <p className="flex items-center gap-1 text-[10px] text-muted-foreground mt-0.5 truncate leading-tight">
+                        <Clock className="h-2.5 w-2.5 shrink-0" />
+                        <span className="truncate">{new Date(sub.submitted_at).toLocaleString()}</span>
+                      </p>
+                    </div>
+
+                    <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider ${
+                        sub.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                        sub.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                        'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                      }`}>
+                        {sub.status.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Bottom Row: Text content */}
+                  <div className="p-2 flex flex-col gap-2 flex-1">
+                    <div className="bg-zinc-50 dark:bg-zinc-900 rounded p-1.5 border text-[10px] flex-1 flex flex-col justify-center gap-1">
+                      <p className="text-foreground leading-tight line-clamp-2" title={sub.review_messages?.message_text}>
+                        <span className="font-semibold text-muted-foreground">Text: </span>
+                        "{sub.review_messages?.message_text}"
+                      </p>
+                      {sub.status === 'rejected' && sub.rejection_reason && (
+                        <p className="text-red-600 dark:text-red-400 leading-tight line-clamp-1" title={sub.rejection_reason}>
+                          <span className="font-semibold">Reason: </span>
+                          {sub.rejection_reason}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : !submission ? (
         <>
           <div className="mb-6">
             <h1 className="text-2xl font-bold tracking-tight mb-2">Complete Task</h1>
@@ -133,7 +262,7 @@ export default function IssuedView() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="bg-white dark:bg-zinc-900 p-4 rounded-md border font-medium">
-                {assignedMessage.message_text}
+                {assignedMessage?.message_text}
               </div>
               <Button onClick={handleCopy} className="w-full text-lg h-12">
                 <Copy className="h-5 w-5 mr-2" />

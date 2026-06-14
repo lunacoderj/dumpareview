@@ -6,10 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, Plus, Target, CheckCircle2 } from "lucide-react";
+import { Loader2, Plus, Target, CheckCircle2, Edit, Trash2 } from "lucide-react";
 import { Database } from "@/lib/supabase/types";
 
-type Campaign = Database['public']['Tables']['campaigns']['Row'];
+type Campaign = Database['public']['Tables']['campaigns']['Row'] & {
+  review_messages?: { id: string; status: string; message_text?: string }[];
+};
 
 export default function AdminCampaigns() {
   const { toast } = useToast();
@@ -17,10 +19,12 @@ export default function AdminCampaigns() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState("");
   const [reviewLink, setReviewLink] = useState("");
   const [targetCount, setTargetCount] = useState("10");
   const [bulkMessages, setBulkMessages] = useState("");
+  const [existingMessages, setExistingMessages] = useState<any[]>([]);
 
   const fetchCampaigns = async () => {
     try {
@@ -37,41 +41,55 @@ export default function AdminCampaigns() {
     fetchCampaigns();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreateOrUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
 
     try {
-      // 1. Create Campaign
-      const campaign = await apiFetch('/api/admin/campaigns', {
-        method: 'POST',
-        body: JSON.stringify({
-          company_name: companyName,
-          google_review_link: reviewLink,
-          target_count: parseInt(targetCount),
-          current_count: 0,
-          is_active: true
-        })
-      });
-
-      // 2. Parse and Insert Messages
-      const messages = bulkMessages
-        .split('\n')
-        .map(m => m.trim())
-        .filter(m => m.length > 0);
-
-      if (messages.length > 0) {
-        await apiFetch(`/api/admin/campaigns/${campaign.id}/messages`, {
-          method: 'POST',
-          body: JSON.stringify({ messages })
+      if (editingId) {
+        // Update Campaign
+        await apiFetch(`/api/admin/campaigns/${editingId}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            company_name: companyName,
+            google_review_link: reviewLink,
+            target_count: parseInt(targetCount),
+          })
         });
+
+        // Add more messages if any
+        const messages = bulkMessages.split('\n').map(m => m.trim()).filter(m => m.length > 0);
+        if (messages.length > 0) {
+          await apiFetch(`/api/admin/campaigns/${editingId}/messages`, {
+            method: 'POST',
+            body: JSON.stringify({ messages })
+          });
+        }
+        toast({ title: "Success", description: "Campaign updated." });
+      } else {
+        // Create Campaign
+        const campaign = await apiFetch('/api/admin/campaigns', {
+          method: 'POST',
+          body: JSON.stringify({
+            company_name: companyName,
+            google_review_link: reviewLink,
+            target_count: parseInt(targetCount),
+            current_count: 0,
+            is_active: true
+          })
+        });
+
+        const messages = bulkMessages.split('\n').map(m => m.trim()).filter(m => m.length > 0);
+        if (messages.length > 0) {
+          await apiFetch(`/api/admin/campaigns/${campaign.id}/messages`, {
+            method: 'POST',
+            body: JSON.stringify({ messages })
+          });
+        }
+        toast({ title: "Success", description: "Campaign and messages created." });
       }
 
-      toast({ title: "Success", description: "Campaign and messages created." });
-      setCompanyName("");
-      setReviewLink("");
-      setTargetCount("10");
-      setBulkMessages("");
+      resetForm();
       fetchCampaigns();
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -79,6 +97,15 @@ export default function AdminCampaigns() {
       setSubmitting(false);
     }
   };
+
+  const resetForm = () => {
+    setEditingId(null);
+    setCompanyName("");
+    setReviewLink("");
+    setTargetCount("10");
+    setBulkMessages("");
+    setExistingMessages([]);
+  }
 
   const toggleActive = async (id: string, currentStatus: boolean) => {
     try {
@@ -92,6 +119,52 @@ export default function AdminCampaigns() {
     }
   };
 
+  const handleDeleteMessage = async (msgId: string) => {
+    if (!confirm("Delete this message?")) return;
+    try {
+      await apiFetch(`/api/admin/messages/${msgId}`, { method: 'DELETE' });
+      setExistingMessages(prev => prev.filter(m => m.id !== msgId));
+      fetchCampaigns();
+      toast({ title: "Deleted", description: "Message deleted successfully." });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const handleUpdateMessage = async (msgId: string, newText: string) => {
+    try {
+      await apiFetch(`/api/admin/messages/${msgId}`, { 
+        method: 'PUT',
+        body: JSON.stringify({ message_text: newText })
+      });
+      toast({ title: "Updated", description: "Message updated successfully." });
+      fetchCampaigns();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this campaign? This action cannot be undone.")) return;
+    try {
+      await apiFetch(`/api/admin/campaigns/${id}`, { method: 'DELETE' });
+      toast({ title: "Deleted", description: "Campaign deleted successfully." });
+      fetchCampaigns();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const handleEdit = (camp: Campaign) => {
+    setEditingId(camp.id);
+    setCompanyName(camp.company_name);
+    setReviewLink(camp.google_review_link);
+    setTargetCount(camp.target_count.toString());
+    setBulkMessages(""); // Provide empty bulk messages, adding them appends
+    setExistingMessages(camp.review_messages || []);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
       <div>
@@ -100,14 +173,14 @@ export default function AdminCampaigns() {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8">
-        {/* Create Form */}
+        {/* Create/Edit Form */}
         <Card className="lg:col-span-1 border-zinc-200 dark:border-zinc-800">
           <CardHeader>
-            <CardTitle>New Campaign</CardTitle>
-            <CardDescription>Launch a new review drive</CardDescription>
+            <CardTitle>{editingId ? "Edit Campaign" : "New Campaign"}</CardTitle>
+            <CardDescription>{editingId ? "Update existing campaign details" : "Launch a new review drive"}</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleCreate} className="space-y-4">
+            <form onSubmit={handleCreateOrUpdate} className="space-y-4">
               <div className="space-y-2">
                 <Label>Company Name</Label>
                 <Input value={companyName} onChange={e => setCompanyName(e.target.value)} required />
@@ -121,19 +194,56 @@ export default function AdminCampaigns() {
                 <Input type="number" min="1" value={targetCount} onChange={e => setTargetCount(e.target.value)} required />
               </div>
               <div className="space-y-2">
-                <Label>Bulk Messages (one per line)</Label>
+                <Label>{editingId ? "Add More Bulk Messages (Optional)" : "Bulk Messages (one per line)"}</Label>
                 <Textarea 
-                  rows={6} 
+                  rows={4} 
                   placeholder="The food was great...&#10;Loved the ambiance...&#10;Fast service!"
                   value={bulkMessages} 
                   onChange={e => setBulkMessages(e.target.value)} 
-                  required 
+                  required={!editingId}
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                Create Campaign
-              </Button>
+
+              {editingId && existingMessages.length > 0 && (
+                <div className="space-y-2 mt-4">
+                  <Label>Existing Messages</Label>
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                    {existingMessages.map((msg, i) => (
+                      <div key={msg.id} className="flex gap-2 items-start">
+                        <Textarea 
+                          className="flex-1 min-h-[40px] py-2" 
+                          value={msg.message_text || ""} 
+                          onChange={(e) => {
+                            const newMsgs = [...existingMessages];
+                            newMsgs[i].message_text = e.target.value;
+                            setExistingMessages(newMsgs);
+                          }}
+                        />
+                        <div className="flex flex-col gap-1">
+                          <Button type="button" size="sm" onClick={() => handleUpdateMessage(msg.id, msg.message_text)} title="Save">
+                            <CheckCircle2 className="h-4 w-4" />
+                          </Button>
+                          <Button type="button" size="sm" variant="destructive" onClick={() => handleDeleteMessage(msg.id)} title="Delete">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : (editingId ? <Edit className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />)}
+                  {editingId ? "Update Campaign" : "Create Campaign"}
+                </Button>
+                {editingId && (
+                  <Button type="button" variant="outline" onClick={resetForm} disabled={submitting}>
+                    Cancel
+                  </Button>
+                )}
+              </div>
             </form>
           </CardContent>
         </Card>
@@ -175,7 +285,13 @@ export default function AdminCampaigns() {
                       </div>
                     </div>
 
-                    <div className="mt-6 flex justify-end">
+                    <div className="mt-6 flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleEdit(camp)}>
+                        <Edit className="h-4 w-4 mr-1" /> Edit
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDelete(camp.id)}>
+                        <Trash2 className="h-4 w-4 mr-1" /> Delete
+                      </Button>
                       <Button variant={camp.is_active ? "outline" : "default"} size="sm" onClick={() => toggleActive(camp.id, camp.is_active)}>
                         {camp.is_active ? 'Pause' : 'Activate'}
                       </Button>

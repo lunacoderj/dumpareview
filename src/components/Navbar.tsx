@@ -36,6 +36,7 @@ export default function Navbar() {
     { to: "/admin/audit", label: "Audit", icon: ShieldCheck },
     { to: "/admin/proofs", label: "Proofs", icon: FileCheck2 },
     { to: "/admin/wall-of-fame", label: "Fame", icon: Star },
+    { to: "/admin/users", label: "Users", icon: UserCircle },
   ];
 
   const navLinks = user ? (isAdmin ? adminLinks : userLinks) : [];

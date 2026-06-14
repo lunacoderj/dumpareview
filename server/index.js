@@ -14,7 +14,7 @@ async function sendPushNotification(userId, title, body) {
     const { data: userProfile } = await supabase
       .from('user_profiles')
       .select('fcm_token')
-      .eq('id', userId)
+      .eq('user_id', userId)
       .single();
 
     // 2. Save notification to database
@@ -45,12 +45,12 @@ async function notifyAdmin(title, body) {
   try {
     const { data: adminProfile } = await supabase
       .from('user_profiles')
-      .select('id')
+      .select('user_id')
       .eq('email', process.env.ADMIN_EMAIL)
       .single();
       
     if (adminProfile) {
-      await sendPushNotification(adminProfile.id, title, body);
+      await sendPushNotification(adminProfile.user_id, title, body);
     }
   } catch (err) {
     console.error('Error notifying admin:', err);
@@ -62,8 +62,8 @@ app.use(cors());
 app.use(express.json());
 
 // Initialize Supabase
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
@@ -72,8 +72,8 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Initialize Resend
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Resend (with dummy key if missing)
+const resend = new Resend(process.env.RESEND_API_KEY || 're_123456789');
 
 // Initialize Firebase Admin (only for token verification, no service account needed just projectId)
 admin.initializeApp({
@@ -148,20 +148,20 @@ cron.schedule('*/5 * * * *', async () => {
 });
 
 // -------------------------------------------------------------
-// CRON: 12-Hour Maturation Timer
+// CRON: 6-Hour Maturation Timer
 // -------------------------------------------------------------
 // Runs every hour to flag mature submissions for admin audit
 cron.schedule('0 * * * *', async () => {
-  console.log('[CRON] Running 12-hour maturation check...');
+  console.log('[CRON] Running 6-hour maturation check...');
   try {
-    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
     
     const { data: matureSubs, error: fetchErr } = await supabase
       .from('submissions')
       .select('id, user_profiles(email, full_name)')
       .eq('status', 'pending')
       .eq('twelve_hour_check_triggered', false)
-      .lt('submitted_at', twelveHoursAgo);
+      .lt('submitted_at', sixHoursAgo);
 
     if (fetchErr) throw fetchErr;
 
@@ -183,7 +183,7 @@ cron.schedule('0 * * * *', async () => {
           from: 'Admin <onboarding@resend.dev>',
           to: process.env.ADMIN_EMAIL,
           subject: 'DumpAReview: Submissions Ready for Audit',
-          html: `<p>${matureSubs.length} submissions have matured past 12 hours and are waiting in the queue.</p>`
+          html: `<p>${matureSubs.length} submissions have matured past 6 hours and are waiting in the queue.</p>`
         }).catch(err => console.error("Email error:", err.message));
       }
 
@@ -276,7 +276,7 @@ app.post('/api/user/fcm-token', requireAuth, async (req, res) => {
     const { error } = await supabase
       .from('user_profiles')
       .update({ fcm_token: token })
-      .eq('id', req.user.uid);
+      .eq('user_id', req.user.uid);
 
     if (error) throw error;
     res.json({ success: true });
@@ -419,16 +419,7 @@ app.get('/api/campaigns/active', requireAuth, async (req, res) => {
       .order('created_at', { ascending: false });
     if (campError) throw campError;
 
-    const { data: userSubs, error: subError } = await supabase
-      .from('submissions')
-      .select('campaign_id')
-      .eq('user_id', req.user.uid);
-    if (subError) throw subError;
-
-    const submittedCampaignIds = new Set(userSubs.map(s => s.campaign_id));
-    const availableCamps = (camps || []).filter(c => 
-      !submittedCampaignIds.has(c.id) && c.current_count < c.target_count
-    );
+    const availableCamps = (camps || []).filter(c => c.current_count < c.target_count);
     res.json(availableCamps);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -436,6 +427,64 @@ app.get('/api/campaigns/active', requireAuth, async (req, res) => {
 });
 
 // Issued View logic
+app.get('/api/public/campaigns/:id/task', async (req, res) => {
+  try {
+    const campaignId = req.params.id;
+    // Just assign a new message to nobody (assigned_to: null, but status: assigned? Or just send one without locking if we want to allow public use without hoarding lock, but wait! We should lock it to avoid giving same message to two people at same time)
+    // To keep it simple, we can just assign to a dummy ID or just set status='assigned'
+    let msgToUse = null;
+    
+    const { data: availableMsgs } = await supabase
+      .from('review_messages')
+      .select('*')
+      .eq('campaign_id', campaignId)
+      .eq('status', 'available')
+      .limit(1);
+
+    if (!availableMsgs || availableMsgs.length === 0) return res.status(404).json({ error: "No tasks left" });
+
+    const targetMsg = availableMsgs[0];
+    const { data: updatedMsg, error: lockErr } = await supabase
+      .from('review_messages')
+      .update({ status: 'assigned', assigned_at: new Date().toISOString() })
+      .eq('id', targetMsg.id)
+      .eq('status', 'available')
+      .select()
+      .single();
+
+    if (lockErr || !updatedMsg) return res.status(409).json({ error: "Task unavailable" });
+    msgToUse = updatedMsg;
+
+    const { data: camp } = await supabase.from('campaigns').select('*').eq('id', campaignId).single();
+    res.json({ message: msgToUse, campaign: camp });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/public/check-email', async (req, res) => {
+  try {
+    const { campaign_id, email } = req.query;
+    if (!campaign_id || !email) return res.status(400).json({ error: 'Missing parameters' });
+    
+    const { data: existing } = await supabase
+      .from('submissions')
+      .select('id')
+      .eq('campaign_id', campaign_id)
+      .eq('extracted_email', email)
+      .neq('status', 'rejected')
+      .limit(1);
+      
+    if (existing && existing.length > 0) {
+      return res.json({ exists: true });
+    }
+    
+    res.json({ exists: false });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/campaigns/:id/task', requireAuth, async (req, res) => {
   try {
     const campaignId = req.params.id;
@@ -498,7 +547,23 @@ app.get('/api/campaigns/:id/task', requireAuth, async (req, res) => {
 
 app.post('/api/submissions', requireAuth, async (req, res) => {
   try {
-    const { campaign_id, message_id, screenshot_url } = req.body;
+    const { campaign_id, message_id, screenshot_url, extracted_email } = req.body;
+    
+    if (extracted_email) {
+      // Check if email already exists for this campaign
+      const { data: existing } = await supabase
+        .from('submissions')
+        .select('id')
+        .eq('campaign_id', campaign_id)
+        .eq('extracted_email', extracted_email)
+        .neq('status', 'rejected')
+        .limit(1);
+        
+      if (existing && existing.length > 0) {
+        return res.status(400).json({ error: "Email already exists for this campaign. Submission rejected." });
+      }
+    }
+
     const { data, error } = await supabase
       .from('submissions')
       .insert([{
@@ -506,6 +571,7 @@ app.post('/api/submissions', requireAuth, async (req, res) => {
         campaign_id,
         message_id,
         screenshot_url,
+        extracted_email,
         status: 'pending'
       }])
       .select()
@@ -521,6 +587,115 @@ app.post('/api/submissions', requireAuth, async (req, res) => {
   }
 });
 
+// PUBLIC ENDPOINTS
+
+app.get('/api/public/campaigns/:id/task', async (req, res) => {
+  try {
+    const campaignId = req.params.id;
+    // Pick a random available message
+    const { data: availableMsgs } = await supabase
+      .from('review_messages')
+      .select('*')
+      .eq('campaign_id', campaignId)
+      .eq('status', 'available')
+      .limit(1);
+
+    if (!availableMsgs || availableMsgs.length === 0) return res.status(404).json({ error: "No tasks left" });
+
+    const targetMsg = availableMsgs[0];
+    const { data: updatedMsg, error: lockErr } = await supabase
+      .from('review_messages')
+      .update({ status: 'assigned', assigned_to: 'public_pending', assigned_at: new Date().toISOString() })
+      .eq('id', targetMsg.id)
+      .eq('status', 'available')
+      .select()
+      .single();
+
+    if (lockErr || !updatedMsg) return res.status(409).json({ error: "Task unavailable, please try again." });
+
+    const { data: camp } = await supabase.from('campaigns').select('*').eq('id', campaignId).single();
+    res.json({ message: updatedMsg, campaign: camp });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/public/submissions', async (req, res) => {
+  try {
+    const { campaign_id, screenshot_url, extracted_email, referrer_uid } = req.body;
+    let { message_id } = req.body;
+
+    if (!referrer_uid) {
+      return res.status(400).json({ error: "Referrer UID is missing. Cannot attribute reward." });
+    }
+
+    if (!message_id) {
+      // Find a message that was assigned to public_pending for this campaign
+      const { data: pendingMsgs } = await supabase
+        .from('review_messages')
+        .select('id')
+        .eq('campaign_id', campaign_id)
+        .eq('status', 'assigned')
+        .eq('assigned_to', 'public_pending')
+        .limit(1);
+      
+      if (pendingMsgs && pendingMsgs.length > 0) {
+        message_id = pendingMsgs[0].id;
+      } else {
+        // Fallback: Pick an available message if no public_pending is found
+        const { data: availableMsgs } = await supabase
+          .from('review_messages')
+          .select('id')
+          .eq('campaign_id', campaign_id)
+          .eq('status', 'available')
+          .limit(1);
+          
+        if (availableMsgs && availableMsgs.length > 0) {
+          message_id = availableMsgs[0].id;
+        }
+      }
+    }
+
+    if (extracted_email) {
+      const { data: existing } = await supabase
+        .from('submissions')
+        .select('id')
+        .eq('campaign_id', campaign_id)
+        .eq('extracted_email', extracted_email)
+        .neq('status', 'rejected')
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        return res.status(400).json({ error: "Email already exists for this campaign. Submission rejected." });
+      }
+    }
+
+    // Insert submission attributed to the referrer
+    const { data, error } = await supabase
+      .from('submissions')
+      .insert([{
+        user_id: referrer_uid,
+        campaign_id,
+        message_id,
+        screenshot_url,
+        extracted_email,
+        status: 'pending'
+      }])
+      .select()
+      .single();
+    if (error) throw error;
+
+    // Optional: mark message as completed
+    await supabase.from('review_messages').update({ status: 'completed' }).eq('id', message_id);
+
+    await notifyAdmin('New Public Review Submitted 📝', `A new public review is waiting in the queue for campaign ID: ${campaign_id}.`);
+
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/submissions/:id/trigger', requireAuth, async (req, res) => {
   try {
     const { error } = await supabase
@@ -530,6 +705,21 @@ app.post('/api/submissions/:id/trigger', requireAuth, async (req, res) => {
       .eq('user_id', req.user.uid);
     if (error) throw error;
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/user/submissions', requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('submissions')
+      .select('*, campaigns(company_name), review_messages(message_text)')
+      .eq('user_id', req.user.uid)
+      .order('submitted_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -585,13 +775,29 @@ app.post('/api/disputes/:id/resolve', requireAuth, async (req, res) => {
 });
 
 // -- ADMIN ROUTES --
+// Fetch all campaigns (Admin)
 app.get('/api/admin/campaigns', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { data, error } = await supabase.from('campaigns').select('*, review_messages (id, status)').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('campaigns').select('*, review_messages (id, status, message_text)').order('created_at', { ascending: false });
     if (error) throw error;
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Fetch all registered users (Admin)
+app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -619,6 +825,29 @@ app.put('/api/admin/campaigns/:id/toggle', requireAuth, requireAdmin, async (req
   }
 });
 
+app.put('/api/admin/campaigns/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { company_name, google_review_link, target_count, current_count } = req.body;
+    const { data, error } = await supabase.from('campaigns').update({
+      company_name, google_review_link, target_count, current_count
+    }).eq('id', req.params.id).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/campaigns/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase.from('campaigns').delete().eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/admin/campaigns/:id/messages', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { messages } = req.body;
@@ -631,14 +860,34 @@ app.post('/api/admin/campaigns/:id/messages', requireAuth, requireAdmin, async (
   }
 });
 
+app.delete('/api/admin/messages/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase.from('review_messages').delete().eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/messages/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { message_text } = req.body;
+    const { error } = await supabase.from('review_messages').update({ message_text }).eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/admin/queue', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('submissions')
-      .select('id, screenshot_url, submitted_at, twelve_hour_check_triggered, user_profiles ( user_id, full_name, email ), campaigns ( id, company_name ), review_messages ( id, message_text )')
-      .eq('status', 'pending')
-      .eq('twelve_hour_check_triggered', true)
-      .order('submitted_at', { ascending: true });
+      .select('id, screenshot_url, submitted_at, twelve_hour_check_triggered, status, rejection_reason, extracted_email, user_profiles ( user_id, full_name, email ), campaigns ( id, company_name ), review_messages ( id, message_text )')
+      .order('submitted_at', { ascending: false })
+      .limit(1000);
     if (error) throw error;
     res.json(data);
   } catch (err) {
@@ -660,6 +909,9 @@ app.post('/api/admin/queue/:id/approve', requireAuth, requireAdmin, async (req, 
       const newStreak = usr.current_streak + 1;
       await supabase.from('user_profiles').update({ current_streak: newStreak, lifetime_reviews: usr.lifetime_reviews + 1 }).eq('user_id', sub.user_profiles.user_id);
       
+      // Send general approval notification
+      await sendPushNotification(sub.user_profiles.user_id, 'Review Approved! ✅', `Your review submission for ${sub.campaigns.company_name} was approved. You are at ${newStreak}/10 reviews!`);
+
       // If completed 10 reviews
       if (newStreak === 10) {
         await notifyAdmin('Payout Milestone Reached! 🏆', `User ${sub.user_profiles.email} has completed 10 reviews.`);
@@ -675,11 +927,13 @@ app.post('/api/admin/queue/:id/approve', requireAuth, requireAdmin, async (req, 
 
 app.post('/api/admin/queue/:id/reject', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { sub } = req.body;
-    await supabase.from('submissions').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', sub.id);
-    await supabase.from('review_messages').update({ status: 'available', assigned_to: null, assigned_at: null }).eq('id', sub.review_messages.id);
+    const { sub, reason } = req.body;
+    await supabase.from('submissions').update({ status: 'rejected', rejection_reason: reason, reviewed_at: new Date().toISOString() }).eq('id', sub.id);
+    if (sub.review_messages) {
+      await supabase.from('review_messages').update({ status: 'available', assigned_to: null, assigned_at: null }).eq('id', sub.review_messages.id);
+    }
     
-    await sendPushNotification(sub.user_profiles.user_id, 'Review Rejected ❌', 'Your recent review submission was rejected. Please check your active tasks to try again.');
+    await sendPushNotification(sub.user_profiles.user_id, 'Review Rejected ❌', `Your recent review submission was rejected. Reason: ${reason}. Please check your active tasks to try again.`);
     
     res.json({ success: true });
   } catch (err) {

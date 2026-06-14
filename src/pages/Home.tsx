@@ -4,9 +4,33 @@ import ActiveTasks from "./ActiveTasks";
 import WallOfFameSection from "@/components/WallOfFameSection";
 import { Navigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
+import { useEffect } from "react";
+import { requestNotificationPermission, setupForegroundMessageListener } from "@/lib/notifications";
+import { toast } from "sonner";
 
 export default function Home() {
   const { user, isAdmin, loading } = useAuth();
+
+  useEffect(() => {
+    if (user && !isAdmin) {
+      requestNotificationPermission();
+
+      let unsubscribe: (() => void) | undefined;
+      setupForegroundMessageListener((payload) => {
+        const title = payload?.notification?.title || "Notification";
+        const body = payload?.notification?.body || "You have a new message.";
+        toast.info(title, {
+          description: body,
+        });
+      }).then(unsub => {
+        unsubscribe = unsub;
+      });
+
+      return () => {
+        if (unsubscribe) unsubscribe();
+      };
+    }
+  }, [user, isAdmin]);
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin h-8 w-8 text-primary" /></div>;
