@@ -589,6 +589,8 @@ async function processImageSubmission(buffer, cropCoordsStr, campaign_company_na
   }
 
   let jimpImage = await Jimp.read(buffer);
+  let uploadImage = jimpImage.clone(); // Clone the full image for uploading
+
   if (cropCoordsStr) {
     try {
       const coords = JSON.parse(cropCoordsStr);
@@ -600,15 +602,22 @@ async function processImageSubmission(buffer, cropCoordsStr, campaign_company_na
     }
   }
 
+  // Optimize cropped image for OCR
   if (jimpImage.bitmap.width > 1024) {
     jimpImage.resize({ w: 1024 });
   }
-  const processedBuffer = await jimpImage.getBuffer('image/jpeg', { quality: 80 });
+  const ocrBuffer = await jimpImage.getBuffer('image/jpeg', { quality: 80 });
+
+  // Optimize full image for upload
+  if (uploadImage.bitmap.width > 1024) {
+    uploadImage.resize({ w: 1024 });
+  }
+  const uploadBuffer = await uploadImage.getBuffer('image/jpeg', { quality: 80 });
 
   let extracted_name = null;
   let ocr_verified = false;
   try {
-    const { data: { text } } = await Tesseract.recognize(processedBuffer, 'eng');
+    const { data: { text } } = await Tesseract.recognize(ocrBuffer, 'eng');
     if (campaign_company_name && text.toLowerCase().includes(campaign_company_name.toLowerCase())) {
       ocr_verified = true;
     }
@@ -623,7 +632,7 @@ async function processImageSubmission(buffer, cropCoordsStr, campaign_company_na
   const filename = `submissions/${Date.now()}_${Math.floor(Math.random()*10000)}.jpg`;
   const { data: uploadData, error: uploadError } = await supabase.storage
     .from('screenshots')
-    .upload(filename, processedBuffer, {
+    .upload(filename, uploadBuffer, {
       contentType: 'image/jpeg',
       upsert: false
     });
