@@ -734,9 +734,16 @@ app.get('/api/public/campaigns/:id/task', async (req, res) => {
 
 app.post('/api/public/submissions', upload.single('screenshot'), async (req, res) => {
   try {
-    const { campaign_id, extracted_email, referrer_uid, crop_coords } = req.body;
-    let { message_id } = req.body;
+    console.log('[DEBUG] /api/public/submissions hit.');
+    console.log('[DEBUG] req.body:', req.body);
+    console.log('[DEBUG] req.file:', req.file);
+    console.log('[DEBUG] Content-Type:', req.headers['content-type']);
+    const { campaign_id, extracted_email, referrer_uid, crop_coords } = req.body || {};
+    let { message_id } = req.body || {};
 
+    if (!campaign_id) {
+      return res.status(400).json({ error: "Campaign ID is missing." });
+    }
     if (!referrer_uid) {
       return res.status(400).json({ error: "Referrer UID is missing. Cannot attribute reward." });
     }
