@@ -8,8 +8,6 @@ import { Loader2, ArrowRight, Target, Store, QrCode, Copy, ExternalLink, UploadC
 import { QRCodeCanvas } from "qrcode.react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import ReactCrop, { type Crop } from 'react-image-crop';
-import 'react-image-crop/dist/ReactCrop.css';
 import axios from 'axios';
 import { supabase } from "@/lib/supabase/client";
 
@@ -29,7 +27,6 @@ export default function ActiveTasks() {
   const [uploading, setUploading] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageSrc, setImageSrc] = useState<string>("");
-  const [crop, setCrop] = useState<Crop>();
 
   useEffect(() => {
     const fetchActiveCampaigns = async () => {
@@ -61,7 +58,6 @@ export default function ActiveTasks() {
     setIsSubmitModalOpen(true);
     setImageFile(null);
     setImageSrc("");
-    setCrop(undefined);
   };
 
   const downloadQRImage = async (camp: any) => {
@@ -168,14 +164,6 @@ export default function ActiveTasks() {
       formData.append('campaign_id', selectedCampaign.id);
       formData.append('screenshot', imageFile);
       if (user?.uid) formData.append('referrer_uid', user.uid);
-      if (crop) {
-        formData.append('crop_coords', JSON.stringify({
-          x: crop.x,
-          y: crop.y,
-          width: crop.width,
-          height: crop.height,
-        }));
-      }
 
       await axios.post(`${BACKEND_URL}/api/public/submissions`, formData);
       
@@ -298,10 +286,7 @@ export default function ActiveTasks() {
             
             {imageSrc && (
               <div className="flex flex-col items-center mt-4">
-                <p className="text-sm font-medium text-muted-foreground mb-2">Please crop the reviewer name in the image below:</p>
-                <ReactCrop crop={crop} onChange={(c) => setCrop(c)}>
-                  <img src={imageSrc} style={{ maxHeight: '400px' }} />
-                </ReactCrop>
+                <img src={imageSrc} className="rounded-md border max-h-[400px] object-contain" alt="Preview" />
               </div>
             )}
 

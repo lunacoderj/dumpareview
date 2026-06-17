@@ -11,9 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription, DialogHeader } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
-import ReactCrop, { type Crop, PixelCrop } from 'react-image-crop';
-import 'react-image-crop/dist/ReactCrop.css';
-import { useRef } from 'react';
 
 export default function IssuedView() {
   const { user } = useAuth();
@@ -31,10 +28,7 @@ export default function IssuedView() {
   const [submission, setSubmission] = useState<any>(null);
   const [allSubmissions, setAllSubmissions] = useState<any[]>([]);
 
-  const [crop, setCrop] = useState<Crop>();
-  const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const [imgSrc, setImgSrc] = useState('');
-  const imgRef = useRef<HTMLImageElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   useEffect(() => {
@@ -81,8 +75,6 @@ export default function IssuedView() {
     const file = e.target.files[0];
     
     setSelectedFile(file);
-    setCrop(undefined);
-    setCompletedCrop(undefined);
     
     const reader = new FileReader();
     reader.addEventListener('load', () => setImgSrc(reader.result?.toString() || ''));
@@ -98,19 +90,6 @@ export default function IssuedView() {
       formData.append('campaign_id', campaign.id);
       formData.append('message_id', assignedMessage.id);
       
-      if (completedCrop && imgRef.current) {
-        const scaleX = imgRef.current.naturalWidth / imgRef.current.width;
-        const scaleY = imgRef.current.naturalHeight / imgRef.current.height;
-        
-        const actualCrop = {
-          x: completedCrop.x * scaleX,
-          y: completedCrop.y * scaleY,
-          width: completedCrop.width * scaleX,
-          height: completedCrop.height * scaleY,
-        };
-        formData.append('crop_coords', JSON.stringify(actualCrop));
-      }
-
       const newSub = await apiFetch('/api/submissions', {
         method: 'POST',
         body: formData
@@ -323,20 +302,12 @@ export default function IssuedView() {
               ) : (
                 <div className="space-y-4">
                   <div className="bg-zinc-50 dark:bg-zinc-900 border rounded-lg p-4">
-                    <p className="text-sm text-center mb-4 font-medium">Please drag a box over your review name if visible. This speeds up verification.</p>
                     <div className="flex justify-center overflow-auto max-h-[500px]">
-                      <ReactCrop
-                        crop={crop}
-                        onChange={(_, percentCrop) => setCrop(percentCrop)}
-                        onComplete={(c) => setCompletedCrop(c)}
-                      >
-                        <img
-                          ref={imgRef}
-                          alt="Crop me"
-                          src={imgSrc}
-                          className="max-w-full"
-                        />
-                      </ReactCrop>
+                      <img
+                        alt="Uploaded preview"
+                        src={imgSrc}
+                        className="max-w-full"
+                      />
                     </div>
                   </div>
                   <div className="flex gap-2">

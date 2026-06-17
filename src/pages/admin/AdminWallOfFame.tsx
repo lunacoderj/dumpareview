@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Trash2, Plus, Image as ImageIcon } from "lucide-react";
+import { Trash2, Plus, Image as ImageIcon, Loader2, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase/client";
 
 type WallOfFameEntry = {
   id: string;
   image_url: string;
+  received_image_url?: string;
   description: string;
   amount: number | null;
   created_at: string;
@@ -26,8 +28,11 @@ export default function AdminWallOfFame() {
 
   // Form state
   const [imageUrl, setImageUrl] = useState("");
+  const [receivedImageUrl, setReceivedImageUrl] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [uploadingSent, setUploadingSent] = useState(false);
+  const [uploadingReceived, setUploadingReceived] = useState(false);
 
   const loadEntries = async () => {
     try {
@@ -49,6 +54,36 @@ export default function AdminWallOfFame() {
     loadEntries();
   }, []);
 
+  const handleFileUpload = async (file: File, type: 'sent' | 'received') => {
+    const setUploading = type === 'sent' ? setUploadingSent : setUploadingReceived;
+    const setUrl = type === 'sent' ? setImageUrl : setReceivedImageUrl;
+    
+    setUploading(true);
+    try {
+      const bucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET;
+      const fileExt = file.name.split('.').pop();
+      const fileName = `wall_of_fame_${type}_${Date.now()}.${fileExt}`;
+      const filePath = `wall_of_fame/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(filePath);
+
+      setUrl(publicUrl);
+      toast({ title: "Success", description: "Image uploaded successfully." });
+    } catch (err: any) {
+      toast({ title: "Upload Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!imageUrl || !description) {
@@ -62,6 +97,7 @@ export default function AdminWallOfFame() {
         method: "POST",
         body: JSON.stringify({
           image_url: imageUrl,
+          received_image_url: receivedImageUrl || null,
           description,
           amount: amount ? Number(amount) : null
         })
@@ -69,6 +105,7 @@ export default function AdminWallOfFame() {
       
       toast({ title: "Success", description: "Entry added to Wall of Fame" });
       setImageUrl("");
+      setReceivedImageUrl("");
       setDescription("");
       setAmount("");
       loadEntries();
@@ -118,7 +155,7 @@ export default function AdminWallOfFame() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="imageUrl">Image URL</Label>
+                <Label htmlFor="imageUrl">Sent Screenshot URL (From Admin)</Label>
                 <div className="flex gap-2">
                   <Input 
                     id="imageUrl" 
@@ -126,8 +163,51 @@ export default function AdminWallOfFame() {
                     value={imageUrl}
                     onChange={(e) => setImageUrl(e.target.value)}
                   />
+                  <div className="relative">
+                    <Input 
+                      type="file" 
+                      accept="image/*" 
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleFileUpload(e.target.files[0], 'sent');
+                        }
+                      }}
+                      disabled={uploadingSent}
+                    />
+                    <Button type="button" variant="outline" disabled={uploadingSent} className="w-[100px]">
+                      {uploadingSent ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Upload className="h-4 w-4 mr-2" /> Upload</>}
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground">Upload the image to an image host or Supabase storage and paste the public link here.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="receivedImageUrl">Received Screenshot URL (From User)</Label>
+                <div className="flex gap-2">
+                  <Input 
+                    id="receivedImageUrl" 
+                    placeholder="https://..." 
+                    value={receivedImageUrl}
+                    onChange={(e) => setReceivedImageUrl(e.target.value)}
+                  />
+                  <div className="relative">
+                    <Input 
+                      type="file" 
+                      accept="image/*" 
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleFileUpload(e.target.files[0], 'received');
+                        }
+                      }}
+                      disabled={uploadingReceived}
+                    />
+                    <Button type="button" variant="outline" disabled={uploadingReceived} className="w-[100px]">
+                      {uploadingReceived ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Upload className="h-4 w-4 mr-2" /> Upload</>}
+                    </Button>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -174,12 +254,21 @@ export default function AdminWallOfFame() {
             <div className="grid sm:grid-cols-2 gap-4">
               {entries.map((entry) => (
                 <Card key={entry.id} className="overflow-hidden border-border/50 bg-card/50 flex flex-col group">
-                  <div className="aspect-video w-full bg-secondary overflow-hidden relative">
-                    <img src={entry.image_url} alt="Proof" className="w-full h-full object-cover" />
+                  <div className="flex w-full bg-secondary overflow-hidden relative">
+                    <div className={`aspect-video relative ${entry.received_image_url ? 'w-1/2 border-r border-border/50' : 'w-full'}`}>
+                      <div className="absolute top-0 left-0 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-br z-10">Sent</div>
+                      <img src={entry.image_url} alt="Sent Proof" className="w-full h-full object-cover" />
+                    </div>
+                    {entry.received_image_url && (
+                      <div className="aspect-video relative w-1/2">
+                        <div className="absolute top-0 left-0 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-br z-10">Received</div>
+                        <img src={entry.received_image_url} alt="Received Proof" className="w-full h-full object-cover" />
+                      </div>
+                    )}
                     <Button 
                       variant="destructive" 
                       size="icon" 
-                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-20"
                       onClick={() => handleDelete(entry.id)}
                     >
                       <Trash2 className="w-4 h-4" />
