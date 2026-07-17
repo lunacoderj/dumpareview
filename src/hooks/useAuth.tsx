@@ -9,11 +9,28 @@ export interface AuthUser {
   uid: string;
   email: string | null;
   emailVerified: boolean;
+  displayName: string | null;
+  photoURL: string | null;
   raw: SupabaseUser;
 }
 
 const toAuthUser = (u: SupabaseUser | null): AuthUser | null =>
-  u ? { uid: u.id, email: u.email ?? null, emailVerified: !!u.email_confirmed_at, raw: u } : null;
+  u
+    ? {
+        uid: u.id,
+        email: u.email ?? null,
+        emailVerified: !!u.email_confirmed_at,
+        displayName:
+          (u.user_metadata?.full_name as string | undefined) ??
+          (u.user_metadata?.name as string | undefined) ??
+          null,
+        photoURL:
+          (u.user_metadata?.avatar_url as string | undefined) ??
+          (u.user_metadata?.picture as string | undefined) ??
+          null,
+        raw: u,
+      }
+    : null;
 
 export interface UserProfile {
   user_id: string;
