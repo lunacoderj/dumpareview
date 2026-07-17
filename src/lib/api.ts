@@ -1,16 +1,10 @@
-import { auth } from './firebase';
+import { supabase } from '@/integrations/supabase/client';
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
-  const user = auth.currentUser;
-  let token = '';
-  
-  if (user) {
-    token = await user.getIdToken();
-  }
-
-  console.log('[apiFetch] user:', user?.uid, 'token:', token ? 'exists' : 'missing');
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token ?? '';
 
   const isFormData = options.body instanceof FormData;
 
