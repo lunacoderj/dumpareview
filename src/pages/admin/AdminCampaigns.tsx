@@ -6,7 +6,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, Plus, Target, CheckCircle2, Edit, Trash2 } from "lucide-react";
+import { Loader2, Plus, Target, CheckCircle2, Edit, Trash2, Save, X } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Database } from "@/lib/supabase/types";
 
 type Campaign = Database['public']['Tables']['campaigns']['Row'] & {
@@ -25,6 +35,11 @@ export default function AdminCampaigns() {
   const [targetCount, setTargetCount] = useState("10");
   const [bulkMessages, setBulkMessages] = useState("");
   const [existingMessages, setExistingMessages] = useState<any[]>([]);
+  const [originalMessages, setOriginalMessages] = useState<Record<string, string>>({});
+  const [deleteMsgId, setDeleteMsgId] = useState<string | null>(null);
+  const [quickAddText, setQuickAddText] = useState("");
+  const [quickAddLoading, setQuickAddLoading] = useState(false);
+  const [savingMsgId, setSavingMsgId] = useState<string | null>(null);
 
   const fetchCampaigns = async () => {
     try {
@@ -105,6 +120,8 @@ export default function AdminCampaigns() {
     setTargetCount("10");
     setBulkMessages("");
     setExistingMessages([]);
+    setOriginalMessages({});
+    setQuickAddText("");
   }
 
   const toggleActive = async (id: string, currentStatus: boolean) => {
@@ -119,8 +136,7 @@ export default function AdminCampaigns() {
     }
   };
 
-  const handleDeleteMessage = async (msgId: string) => {
-    if (!confirm("Delete this message?")) return;
+  const performDeleteMessage = async (msgId: string) => {
     try {
       await apiFetch(`/api/admin/messages/${msgId}`, { method: 'DELETE' });
       setExistingMessages(prev => prev.filter(m => m.id !== msgId));
@@ -128,19 +144,62 @@ export default function AdminCampaigns() {
       toast({ title: "Deleted", description: "Message deleted successfully." });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setDeleteMsgId(null);
     }
   };
 
   const handleUpdateMessage = async (msgId: string, newText: string) => {
+    if (!newText.trim()) {
+      toast({ title: "Message cannot be empty", variant: "destructive" });
+      return;
+    }
+    setSavingMsgId(msgId);
     try {
       await apiFetch(`/api/admin/messages/${msgId}`, { 
         method: 'PUT',
-        body: JSON.stringify({ message_text: newText })
+        body: JSON.stringify({ message_text: newText.trim() })
       });
+      setOriginalMessages(prev => ({ ...prev, [msgId]: newText.trim() }));
       toast({ title: "Updated", description: "Message updated successfully." });
       fetchCampaigns();
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setSavingMsgId(null);
+    }
+  };
+
+  const handleRevertMessage = (msgId: string) => {
+    const original = originalMessages[msgId];
+    setExistingMessages(prev =>
+      prev.map(m => (m.id === msgId ? { ...m, message_text: original } : m))
+    );
+  };
+
+  const handleQuickAddMessages = async () => {
+    if (!editingId) return;
+    const messages = quickAddText.split('\n').map(m => m.trim()).filter(m => m.length > 0);
+    if (messages.length === 0) return;
+    setQuickAddLoading(true);
+    try {
+      await apiFetch(`/api/admin/campaigns/${editingId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ messages })
+      });
+      toast({ title: "Added", description: `${messages.length} message(s) added.` });
+      setQuickAddText("");
+      // Refetch to pull in new messages with their IDs
+      const data = await apiFetch('/api/admin/campaigns');
+      setCampaigns(data || []);
+      const updated = (data || []).find((c: any) => c.id === editingId);
+      const msgs = updated?.review_messages || [];
+      setExistingMessages(msgs);
+      setOriginalMessages(Object.fromEntries(msgs.map((m: any) => [m.id, m.message_text || ""])));
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setQuickAddLoading(false);
     }
   };
 
@@ -161,7 +220,10 @@ export default function AdminCampaigns() {
     setReviewLink(camp.google_review_link);
     setTargetCount(camp.target_count.toString());
     setBulkMessages(""); // Provide empty bulk messages, adding them appends
-    setExistingMessages(camp.review_messages || []);
+    const msgs = camp.review_messages || [];
+    setExistingMessages(msgs);
+    setOriginalMessages(Object.fromEntries(msgs.map((m: any) => [m.id, m.message_text || ""])));
+    setQuickAddText("");
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
