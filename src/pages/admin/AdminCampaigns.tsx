@@ -17,10 +17,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Database } from "@/lib/supabase/types";
-
-type Campaign = Database['public']['Tables']['campaigns']['Row'] & {
-  review_messages?: { id: string; status: string; message_text?: string }[];
+type Campaign = {
+  id: string;
+  company_name: string;
+  google_review_link: string;
+  target_count: number;
+  current_count: number;
+  is_active: boolean;
+  review_messages?: { id: string; status?: string; message_text?: string }[];
 };
 
 export default function AdminCampaigns() {
