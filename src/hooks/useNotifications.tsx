@@ -1,6 +1,4 @@
 import { useState, useEffect } from "react";
-import { getToken, onMessage } from "firebase/messaging";
-import { messaging } from "@/lib/firebase";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -51,52 +49,14 @@ export function useNotifications() {
   };
 
   const requestPermission = async () => {
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        const msg = await messaging();
-        if (msg) {
-          // Note: You need a VAPID key from Firebase Console -> Project Settings -> Cloud Messaging -> Web Push certificates
-          // We will use standard getToken without vapidKey if not provided, but it's recommended to have one.
-          const currentToken = await getToken(msg, {
-            vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY
-          });
-          
-          if (currentToken) {
-            // Send token to your backend
-            await apiFetch('/api/user/fcm-token', {
-              method: 'POST',
-              body: JSON.stringify({ token: currentToken })
-            });
-          } else {
-            console.log('No registration token available. Request permission to generate one.');
-          }
-        }
-      }
-    } catch (err) {
-      console.log('An error occurred while retrieving token. ', err);
-    }
+    // Push notifications are disabled after removing Firebase Cloud Messaging.
+    // Hook this back up to a Lovable Cloud–compatible push provider if needed.
   };
 
   useEffect(() => {
     if (user) {
       loadNotifications();
       requestPermission();
-
-      messaging().then(msg => {
-        if (msg) {
-          const unsubscribe = onMessage(msg, (payload) => {
-            console.log('Message received. ', payload);
-            toast({
-              title: payload.notification?.title || "New Notification",
-              description: payload.notification?.body || "",
-            });
-            // Reload notifications list
-            loadNotifications();
-          });
-          return () => unsubscribe();
-        }
-      });
     } else {
       setNotifications([]);
       setUnreadCount(0);
