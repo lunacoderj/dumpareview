@@ -270,32 +270,121 @@ export default function AdminCampaigns() {
                 />
               </div>
 
-              {editingId && existingMessages.length > 0 && (
-                <div className="space-y-2 mt-4">
-                  <Label>Existing Messages</Label>
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                    {existingMessages.map((msg, i) => (
-                      <div key={msg.id} className="flex gap-2 items-start">
-                        <Textarea 
-                          className="flex-1 min-h-[40px] py-2" 
-                          value={msg.message_text || ""} 
-                          onChange={(e) => {
-                            const newMsgs = [...existingMessages];
-                            newMsgs[i].message_text = e.target.value;
-                            setExistingMessages(newMsgs);
-                          }}
-                        />
-                        <div className="flex flex-col gap-1">
-                          <Button type="button" size="sm" onClick={() => handleUpdateMessage(msg.id, msg.message_text)} title="Save">
-                            <CheckCircle2 className="h-4 w-4" />
-                          </Button>
-                          <Button type="button" size="sm" variant="destructive" onClick={() => handleDeleteMessage(msg.id)} title="Delete">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+              {editingId && (
+                <div className="space-y-3 mt-4 border-t pt-4">
+                  <div className="flex items-center justify-between">
+                    <Label>Existing Messages ({existingMessages.length})</Label>
                   </div>
+
+                  {/* Quick add inline */}
+                  <div className="space-y-2 rounded-md border border-dashed border-zinc-300 dark:border-zinc-700 p-3 bg-zinc-50/50 dark:bg-zinc-900/30">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      Add more messages (one per line)
+                    </Label>
+                    <Textarea
+                      rows={2}
+                      placeholder="New message 1&#10;New message 2"
+                      value={quickAddText}
+                      onChange={e => setQuickAddText(e.target.value)}
+                      className="text-sm"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleQuickAddMessages}
+                      disabled={quickAddLoading || !quickAddText.trim()}
+                      className="w-full"
+                    >
+                      {quickAddLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                      ) : (
+                        <Plus className="h-3.5 w-3.5 mr-1.5" />
+                      )}
+                      Add Messages
+                    </Button>
+                  </div>
+
+                  {existingMessages.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No messages yet. Add some above.
+                    </p>
+                  ) : (
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                      {existingMessages.map((msg, i) => {
+                        const originalText = originalMessages[msg.id] ?? "";
+                        const currentText = msg.message_text || "";
+                        const isDirty = currentText !== originalText;
+                        const isSaving = savingMsgId === msg.id;
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`rounded-md border p-2 transition-colors ${
+                              isDirty
+                                ? "border-amber-300 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20"
+                                : "border-zinc-200 dark:border-zinc-800"
+                            }`}
+                          >
+                            <div className="flex gap-2 items-start">
+                              <span className="text-xs text-muted-foreground pt-2 min-w-[20px] text-right">
+                                {i + 1}.
+                              </span>
+                              <Textarea
+                                className="flex-1 min-h-[40px] py-2 text-sm resize-none"
+                                value={currentText}
+                                onChange={(e) => {
+                                  const newMsgs = [...existingMessages];
+                                  newMsgs[i].message_text = e.target.value;
+                                  setExistingMessages(newMsgs);
+                                }}
+                              />
+                              <div className="flex flex-col gap-1">
+                                {isDirty && (
+                                  <>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={() => handleUpdateMessage(msg.id, currentText)}
+                                      title="Save changes"
+                                      disabled={isSaving}
+                                      className="h-7 w-7 p-0"
+                                    >
+                                      {isSaving ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <Save className="h-3.5 w-3.5" />
+                                      )}
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleRevertMessage(msg.id)}
+                                      title="Discard changes"
+                                      disabled={isSaving}
+                                      className="h-7 w-7 p-0"
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </>
+                                )}
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => setDeleteMsgId(msg.id)}
+                                  title="Delete message"
+                                  className="h-7 w-7 p-0"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
