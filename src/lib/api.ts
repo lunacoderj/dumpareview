@@ -6,11 +6,12 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
   // Legacy Express API is not deployed. Return empty payloads instead of
   // hammering localhost:5000 and flooding the console with fetch errors.
   if (!API_BASE_URL) {
-    if (endpoint.includes('wall-of-fame')) return { entries: [] };
-    if (endpoint.includes('notifications')) return { notifications: [] };
-    if (endpoint.includes('campaigns')) return { campaigns: [] };
-    if (endpoint.includes('profile')) return { profile: null };
-    return {};
+    // Legacy endpoints — return shapes matching what callers expect.
+    if (endpoint.includes('wall-of-fame')) return [];
+    if (endpoint.includes('notifications')) return [];
+    if (endpoint.includes('campaigns')) return [];
+    if (endpoint.includes('profile')) return null;
+    return [];
   }
 
   const { data: { session } } = await supabase.auth.getSession();
