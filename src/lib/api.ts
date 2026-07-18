@@ -1,8 +1,18 @@
 import { supabase } from '@/integrations/supabase/client';
 
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || '';
 
 export const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
+  // Legacy Express API is not deployed. Return empty payloads instead of
+  // hammering localhost:5000 and flooding the console with fetch errors.
+  if (!API_BASE_URL) {
+    if (endpoint.includes('wall-of-fame')) return { entries: [] };
+    if (endpoint.includes('notifications')) return { notifications: [] };
+    if (endpoint.includes('campaigns')) return { campaigns: [] };
+    if (endpoint.includes('profile')) return { profile: null };
+    return {};
+  }
+
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token ?? '';
 
