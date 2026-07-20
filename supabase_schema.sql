@@ -1,208 +1,136 @@
--- SUPABASE MASTER SCHEMA SETUP FOR DUMPAREVIEW
+-- SUPABASE SCHEMA SETUP FOR QREVIEW PRO
+-- Run this in the Supabase SQL Editor
 
 -- 1. Create Tables
 
-CREATE TABLE IF NOT EXISTS public.campaigns (
+-- Profiles Table (Linked to Firebase Auth via user_id)
+CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_name TEXT NOT NULL,
-  google_review_link TEXT NOT NULL,
-  target_count INTEGER NOT NULL,
-  current_count INTEGER DEFAULT 0 NOT NULL,
-  is_active BOOLEAN DEFAULT true NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public.review_messages (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  campaign_id UUID NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
-  message_text TEXT NOT NULL,
-  status TEXT DEFAULT 'available' CHECK (status IN ('available', 'assigned', 'completed')),
-  assigned_to TEXT, -- Firebase UID
-  assigned_at TIMESTAMP WITH TIME ZONE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public.user_profiles (
-  user_id TEXT PRIMARY KEY, -- Firebase UID
-  email TEXT NOT NULL,
+  user_id TEXT NOT NULL UNIQUE, -- Firebase UID
   full_name TEXT,
-  phonepe_details TEXT,
-  current_streak INTEGER DEFAULT 0 NOT NULL,
-  lifetime_reviews INTEGER DEFAULT 0 NOT NULL,
-  fcm_token TEXT,
-  last_login TIMESTAMP WITH TIME ZONE,
+  email TEXT,
+  avatar_url TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS public.submissions (
+-- QR Codes Table
+CREATE TABLE IF NOT EXISTS public.qr_codes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL REFERENCES public.user_profiles(user_id) ON DELETE CASCADE,
-  campaign_id UUID NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
-  message_id UUID NOT NULL REFERENCES public.review_messages(id) ON DELETE CASCADE,
-  screenshot_url TEXT NOT NULL,
-  screenshot_hash VARCHAR(64),
-  image_hash TEXT,
-  is_flagged BOOLEAN DEFAULT false,
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-  twelve_hour_check_triggered BOOLEAN DEFAULT false,
-  apify_verified BOOLEAN DEFAULT false,
-  apify_status TEXT DEFAULT 'pending' CHECK (apify_status IN ('pending', 'approved', 'rejected')),
-  apify_reason TEXT,
-  extracted_email TEXT,
-  extracted_name TEXT,
-  extracted_message TEXT,
-  extracted_stars INTEGER,
-  admin_message TEXT,
-  user_message TEXT,
-  submitted_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
-  reviewed_at TIMESTAMP WITH TIME ZONE
+  user_id TEXT NOT NULL REFERENCES public.profiles(user_id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  google_review_link TEXT NOT NULL,
+  messages TEXT[] DEFAULT '{}' NOT NULL,
+  current_message_index INTEGER DEFAULT 0 NOT NULL,
+  successful_scans INTEGER DEFAULT 0 NOT NULL,
+  message_used_counts INTEGER[] DEFAULT '{}' NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS public.apify_used_reviews (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  apify_review_id text NOT NULL UNIQUE,
-  submission_id uuid REFERENCES public.submissions(id),
-  created_at timestamp with time zone DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.company_reviews (
+-- Scan Events Table
+CREATE TABLE IF NOT EXISTS public.scan_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  campaign_id UUID NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
-  extracted_name TEXT NOT NULL,
-  extracted_message TEXT NOT NULL,
-  extracted_stars INTEGER NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+  qr_code_id UUID NOT NULL REFERENCES public.qr_codes(id) ON DELETE CASCADE,
+  message_used TEXT,
+  message_index INTEGER,
+  scanned_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS public.review_disputes (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL REFERENCES public.user_profiles(user_id) ON DELETE CASCADE,
-  submission_id UUID NOT NULL REFERENCES public.submissions(id) ON DELETE CASCADE,
-  admin_message TEXT NOT NULL,
-  proof_image_url TEXT,
-  status TEXT DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
-);
+-- 2. Create Functions
 
-CREATE TABLE IF NOT EXISTS public.payouts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL REFERENCES public.user_profiles(user_id) ON DELETE CASCADE,
-  amount INTEGER NOT NULL,
-  receipt_url TEXT NOT NULL,
-  user_receipt_url TEXT,
-  status TEXT DEFAULT 'completed' CHECK (status IN ('pending', 'completed')),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
-);
+-- Function to process a scan and return a message
+CREATE OR REPLACE FUNCTION public.process_scan(qr_id UUID)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  qr_record RECORD;
+  msg TEXT;
+  idx INTEGER;
+BEGIN
+  -- Get QR code details
+  SELECT * INTO qr_record FROM qr_codes WHERE id = qr_id;
+  
+  IF NOT FOUND THEN
+    RETURN json_build_object('error', 'QR code not found');
+  END IF;
+  
+  IF array_length(qr_record.messages, 1) IS NULL OR array_length(qr_record.messages, 1) = 0 THEN
+    RETURN json_build_object('error', 'No messages configured');
+  END IF;
+  
+  -- Calculate index (round-robin)
+  idx := qr_record.current_message_index % array_length(qr_record.messages, 1);
+  msg := qr_record.messages[idx + 1]; -- Postgres arrays are 1-indexed
+  
+  -- Increment successful scans and update index
+  UPDATE qr_codes 
+  SET successful_scans = successful_scans + 1,
+      current_message_index = (current_message_index + 1) % array_length(messages, 1),
+      updated_at = now()
+  WHERE id = qr_id;
+  
+  RETURN json_build_object(
+    'message', msg,
+    'message_index', idx,
+    'google_review_link', qr_record.google_review_link
+  );
+END;
+$$;
 
-CREATE TABLE IF NOT EXISTS public.notifications (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT REFERENCES public.user_profiles(user_id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  message TEXT NOT NULL,
-  read BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Function to confirm a scan and record usage
+CREATE OR REPLACE FUNCTION public.confirm_scan(qr_id UUID, p_message_used TEXT, p_message_index INTEGER)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  -- Insert scan event
+  INSERT INTO scan_events (qr_code_id, message_used, message_index)
+  VALUES (qr_id, p_message_used, p_message_index);
+  
+  -- Update specific message usage counts
+  -- Note: We initialize the array if it's too small
+  UPDATE qr_codes
+  SET message_used_counts = (
+    SELECT array_agg(
+      CASE 
+        WHEN i = p_message_index + 1 THEN COALESCE(message_used_counts[i], 0) + 1
+        ELSE COALESCE(message_used_counts[i], 0)
+      END
+    )
+    FROM generate_series(1, array_length(messages, 1)) i
+  )
+  WHERE id = qr_id;
+END;
+$$;
 
-CREATE TABLE IF NOT EXISTS public.wall_of_fame (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  image_url TEXT NOT NULL,
-  received_image_url TEXT,
-  description TEXT NOT NULL,
-  amount NUMERIC,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- 3. Enable RLS and Basic Policies
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.qr_codes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.scan_events ENABLE ROW LEVEL SECURITY;
 
-CREATE TABLE IF NOT EXISTS public.apify_scraped_reviews (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  campaign_id UUID NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
-  apify_review_id TEXT UNIQUE,
-  reviewer_name TEXT,
-  review_text TEXT,
-  stars INTEGER,
-  publish_time TIMESTAMP WITH TIME ZONE,
-  is_used BOOLEAN DEFAULT false,
-  used_by_submission_id UUID REFERENCES public.submissions(id) ON DELETE SET NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
-);
+-- Allow anyone to read profiles (needed for public dashboard views)
+CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles
+  FOR SELECT USING (true);
 
--- 2. Enable RLS
-ALTER TABLE public.campaigns ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.review_messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.apify_used_reviews ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.apify_scraped_reviews ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.company_reviews ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.review_disputes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.payouts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.wall_of_fame ENABLE ROW LEVEL SECURITY;
+-- Allow users to manage their own profile
+CREATE POLICY "Users can update their own profile" ON public.profiles
+  FOR ALL USING (true); -- Simplified for initial setup
 
--- 3. Setup strict RLS for backend proxy mode
--- We deny all public operations because all queries pass through the secured server-side code (using the service_role key)
-CREATE POLICY "Deny all public selects on profiles" ON public.user_profiles FOR SELECT USING (false);
-CREATE POLICY "Deny all public updates on profiles" ON public.user_profiles FOR UPDATE USING (false);
-CREATE POLICY "Deny all public inserts on profiles" ON public.user_profiles FOR INSERT WITH CHECK (false);
+-- Allow anyone to read QR codes (needed for scanning)
+CREATE POLICY "QR codes are viewable by everyone" ON public.qr_codes
+  FOR SELECT USING (true);
 
-CREATE POLICY "Deny all public selects on campaigns" ON public.campaigns FOR SELECT USING (false);
-CREATE POLICY "Deny all public selects on review_messages" ON public.review_messages FOR SELECT USING (false);
-CREATE POLICY "Deny all public updates on review_messages" ON public.review_messages FOR UPDATE USING (false);
+-- Allow users to manage their own QR codes
+CREATE POLICY "Users can manage their own qr_codes" ON public.qr_codes
+  FOR ALL USING (true); -- Simplified for initial setup
 
-CREATE POLICY "Deny all public operations on submissions" ON public.submissions FOR ALL USING (false);
-CREATE POLICY "Deny all public operations on apify_used_reviews" ON public.apify_used_reviews FOR ALL USING (false);
-CREATE POLICY "Deny all public operations on apify_scraped_reviews" ON public.apify_scraped_reviews FOR ALL USING (false);
-CREATE POLICY "Deny all public operations on company_reviews" ON public.company_reviews FOR ALL USING (false);
-CREATE POLICY "Deny all public operations on review_disputes" ON public.review_disputes FOR ALL USING (false);
-CREATE POLICY "Deny all public operations on payouts" ON public.payouts FOR ALL USING (false);
-CREATE POLICY "Deny all public operations on notifications" ON public.notifications FOR ALL USING (false);
-CREATE POLICY "Deny all public operations on wall_of_fame" ON public.wall_of_fame FOR ALL USING (false);
+-- Allow anyone to read and insert scan events
+CREATE POLICY "Scan events are viewable by everyone" ON public.scan_events
+  FOR SELECT USING (true);
 
--- 4. Grants (SECURITY: Only service_role gets full access — anon/authenticated get NOTHING)
--- Your backend uses service_role key, so all DB calls go through the server.
--- This prevents anyone from using the public anon key to bypass RLS.
-REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
-REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
-REVOKE ALL ON ALL ROUTINES IN SCHEMA public FROM anon, authenticated;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON ROUTINES FROM anon, authenticated;
-
-GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
-GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO service_role;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO service_role;
-
--- 5. Security Tables
-
--- Audit Log (tracks all admin actions)
-CREATE TABLE IF NOT EXISTS public.audit_logs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  actor_id TEXT NOT NULL,
-  actor_email TEXT,
-  action TEXT NOT NULL,
-  target_type TEXT NOT NULL,
-  target_id TEXT,
-  details JSONB,
-  ip_address TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Deny all on audit_logs" ON public.audit_logs FOR ALL USING (false);
-GRANT ALL ON public.audit_logs TO service_role;
-
--- System Locks (prevents concurrent cron runs)
-CREATE TABLE IF NOT EXISTS public.system_locks (
-  lock_name TEXT PRIMARY KEY,
-  locked_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-ALTER TABLE public.system_locks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Deny all on system_locks" ON public.system_locks FOR ALL USING (false);
-GRANT ALL ON public.system_locks TO service_role;
+CREATE POLICY "Anyone can insert scan events" ON public.scan_events
+  FOR INSERT WITH CHECK (true);
