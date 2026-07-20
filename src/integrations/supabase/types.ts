@@ -120,11 +120,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      confirm_scan: {
-        Args: { p_message_index: number; p_message_used: string; qr_id: string }
-        Returns: string
-      }
-      process_scan: { Args: { qr_id: string }; Returns: Json }
+      [_ in never]: never
     }
     Enums: {
       [_ in never]: never
