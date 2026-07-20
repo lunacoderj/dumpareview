@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signInWithPopup
+} from "firebase/auth";
+import { auth, googleProvider } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -37,16 +42,11 @@ export default function Auth() {
         toast({ title: "Check your email", description: "Password reset link sent!" });
         setIsReset(false);
       } else if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: `${window.location.origin}/` },
-        });
-        if (error) throw error;
+        const userCred = await createUserWithEmailAndPassword(auth, email, password);
+        await sendEmailVerification(userCred.user);
         toast({ title: "Account created", description: "Please check your email to verify your account." });
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        await signInWithEmailAndPassword(auth, email, password);
         toast({ title: "Welcome back!", description: "Successfully signed in." });
       }
     } catch (error: any) {
@@ -63,16 +63,13 @@ export default function Auth() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
-      const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin,
-      });
-      if (result.error) throw new Error(result.error.message ?? "Google sign-in failed");
-      // If result.redirected, the browser is navigating away; otherwise session is set.
+      await signInWithPopup(auth, googleProvider);
+      toast({ title: "Welcome!", description: "Successfully signed in with Google." });
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Authentication Error",
-        description: error.message,
+      toast({ 
+        variant: "destructive", 
+        title: "Authentication Error", 
+        description: error.message 
       });
     } finally {
       setIsLoading(false);

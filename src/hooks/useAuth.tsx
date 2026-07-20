@@ -1,36 +1,14 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import type { User as SupabaseUser } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import { 
+  User, 
+  onAuthStateChanged, 
+  signOut as firebaseSignOut,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  UserCredential
+} from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import { apiFetch } from "@/lib/api";
-
-// Compatibility shape so existing components that read `user.uid`,
-// `user.email`, and `user.emailVerified` keep working after the Firebase → Cloud Auth swap.
-export interface AuthUser {
-  uid: string;
-  email: string | null;
-  emailVerified: boolean;
-  displayName: string | null;
-  photoURL: string | null;
-  raw: SupabaseUser;
-}
-
-const toAuthUser = (u: SupabaseUser | null): AuthUser | null =>
-  u
-    ? {
-        uid: u.id,
-        email: u.email ?? null,
-        emailVerified: !!u.email_confirmed_at,
-        displayName:
-          (u.user_metadata?.full_name as string | undefined) ??
-          (u.user_metadata?.name as string | undefined) ??
-          null,
-        photoURL:
-          (u.user_metadata?.avatar_url as string | undefined) ??
-          (u.user_metadata?.picture as string | undefined) ??
-          null,
-        raw: u,
-      }
-    : null;
 
 export interface UserProfile {
   user_id: string;
@@ -43,7 +21,7 @@ export interface UserProfile {
 }
 
 interface AuthContextType {
-  user: AuthUser | null;
+  user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
@@ -69,7 +47,7 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -77,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isEmailVerified = user?.emailVerified || false;
   const hasPhonePeDetails = !!userProfile?.phonepe_details;
 
-  const fetchProfile = async (_uid: string, email: string | null) => {
+  const fetchProfile = async (uid: string, email: string | null) => {
     if (!email) return null;
     try {
       const data = await apiFetch('/api/user/profile');
@@ -94,43 +72,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      const next = toAuthUser(session?.user ?? null);
-      setUser(next);
-      setLoading(false);
-      if (next) {
-        // defer to avoid deadlock inside the auth callback
-        setTimeout(() => { fetchProfile(next.uid, next.email); }, 0);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
+      if (firebaseUser) {
+        await fetchProfile(firebaseUser.uid, firebaseUser.email);
       } else {
         setUserProfile(null);
       }
-    });
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const next = toAuthUser(session?.user ?? null);
-      setUser(next);
       setLoading(false);
-      if (next) fetchProfile(next.uid, next.email);
     });
 
-    return () => sub.subscription.unsubscribe();
+    return () => unsubscribe();
   }, []);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await firebaseSignOut(auth);
     setUserProfile(null);
   };
 
   const resendVerification = async () => {
-    if (user?.email) {
-      await supabase.auth.resend({ type: "signup", email: user.email });
+    if (user) {
+      await sendEmailVerification(user);
     }
   };
 
   const resetPassword = async (email: string) => {
-    await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
+    await sendPasswordResetEmail(auth, email);
   };
 
   return (

@@ -1,21 +1,16 @@
-import { supabase } from '@/integrations/supabase/client';
+import { auth } from './firebase';
 
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || '';
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
-  // Legacy Express API is not deployed. Return empty payloads instead of
-  // hammering localhost:5000 and flooding the console with fetch errors.
-  if (!API_BASE_URL) {
-    // Legacy endpoints — return shapes matching what callers expect.
-    if (endpoint.includes('wall-of-fame')) return [];
-    if (endpoint.includes('notifications')) return [];
-    if (endpoint.includes('campaigns')) return [];
-    if (endpoint.includes('profile')) return null;
-    return [];
+  const user = auth.currentUser;
+  let token = '';
+  
+  if (user) {
+    token = await user.getIdToken();
   }
 
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token ?? '';
+  console.log('[apiFetch] user:', user?.uid, 'token:', token ? 'exists' : 'missing');
 
   const isFormData = options.body instanceof FormData;
 
