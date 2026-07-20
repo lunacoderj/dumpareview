@@ -70,6 +70,14 @@ export default function GenerateQR() {
 
     setLoading(true);
     try {
+      // Ensure profile exists in Supabase so foreign keys don't fail with 409 Conflict
+      await supabase.from("profiles").upsert({
+        user_id: user.uid,
+        full_name: user.displayName || "Unknown",
+        email: user.email || "",
+        avatar_url: user.photoURL || ""
+      }, { onConflict: "user_id" });
+
       const { data, error } = await supabase
         .from("qr_codes")
         .insert({

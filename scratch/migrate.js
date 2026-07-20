@@ -92,15 +92,68 @@ const firebaseUsers = {
 async function migrate() {
     console.log('🚀 Starting Final Scan Migration...');
     try {
+        const profilesFile = path.join(OLD_DATABASE_DIR, 'profiles-export-2026-04-23_09-51-38.csv');
+        const profilesOld = parseCSVFull(fs.readFileSync(profilesFile, 'utf8'), ';');
+        console.log(`📊 Total profiles to process: ${profilesOld.length}`);
+        const profilesBatch = profilesOld.map(p => ({
+            id: p.id,
+            user_id: p.user_id,
+            full_name: p.full_name,
+            email: p.email,
+            avatar_url: p.avatar_url,
+            created_at: p.created_at || new Date().toISOString(),
+            updated_at: p.updated_at || new Date().toISOString()
+        }));
+        
+        const { error: profErr } = await supabase.from('profiles').upsert(profilesBatch);
+        if (profErr) { console.error('❌ Error migrating profiles:', profErr.message); }
+        else { console.log('✅ Migrated profiles successfully!'); }
+        
+        const validUserIds = new Set(profilesBatch.map(p => p.user_id));
+
+        const qrCodesFile = path.join(OLD_DATABASE_DIR, 'qr_codes-export-2026-04-23_09-52-35.csv');
+        const qrCodesOld = parseCSVFull(fs.readFileSync(qrCodesFile, 'utf8'), ';');
+        console.log(`📊 Total qr_codes to process: ${qrCodesOld.length}`);
+        
+        const qrBatch = qrCodesOld.map(q => {
+            let messages = [];
+            let message_used_counts = [];
+            try { if (q.messages) messages = JSON.parse(q.messages.replace(/"/g, '"')); } catch(e){}
+            if (!Array.isArray(messages)) messages = [];
+            try { if (q.message_used_counts) message_used_counts = JSON.parse(q.message_used_counts.replace(/"/g, '"')); } catch(e){}
+            if (!Array.isArray(message_used_counts)) message_used_counts = [];
+
+            return {
+                id: q.id,
+                user_id: q.user_id,
+                name: q.name,
+                google_review_link: q.google_review_link,
+                messages: messages,
+                current_message_index: parseInt(q.current_message_index || '0'),
+                successful_scans: parseInt(q.successful_scans || '0'),
+                message_used_counts: message_used_counts,
+                created_at: q.created_at || new Date().toISOString(),
+                updated_at: q.updated_at || new Date().toISOString()
+            };
+        }).filter(q => validUserIds.has(q.user_id));
+        
+        console.log(`📊 Valid qr_codes after filtering missing users: ${qrBatch.length}`);
+        
+        const { error: qrErr } = await supabase.from('qr_codes').upsert(qrBatch);
+        if (qrErr) { console.error('❌ Error migrating qr codes:', qrErr.message); }
+        else { console.log('✅ Migrated qr codes successfully!'); }
+
+        const validQrIds = new Set(qrBatch.map(q => q.id));
+
         const scanEventsFile = path.join(OLD_DATABASE_DIR, 'scan_events-export-2026-04-23_09-48-58.csv');
-        const scanEventsOld = parseCSVFull(fs.readFileSync(scanEventsFile, 'utf8'), ',');
+        const scanEventsOld = parseCSVFull(fs.readFileSync(scanEventsFile, 'utf8'), ';');
 
         console.log(`📊 Total scan events to process: ${scanEventsOld.length}`);
 
         const batchSize = 100;
         for (let i = 0; i < scanEventsOld.length; i += batchSize) {
             const batch = scanEventsOld.slice(i, i + batchSize)
-                .filter(e => e.id && e.qr_code_id) // Filter out empty/broken records
+                .filter(e => e.id && e.qr_code_id && validQrIds.has(e.qr_code_id)) // Filter out empty/broken records
                 .map(e => ({
                     id: e.id,
                     qr_code_id: e.qr_code_id,

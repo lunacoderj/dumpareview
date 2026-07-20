@@ -31,8 +31,18 @@ export default function Dashboard() {
   const [qrCodes, setQrCodes] = useState<QRCode[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [dbError, setDbError] = useState<string | null>(null);
+
   const fetchQRCodes = async () => {
     if (!user) return;
+    // Ensure profile exists in Supabase so foreign keys (like qr_codes) don't fail with 409 Conflict
+    await supabase.from("profiles").upsert({
+      user_id: user.uid,
+      full_name: user.displayName || "Unknown",
+      email: user.email || "",
+      avatar_url: user.photoURL || ""
+    }, { onConflict: "user_id" });
+
     const { data, error } = await supabase
       .from("qr_codes")
       .select("*")
@@ -40,7 +50,11 @@ export default function Dashboard() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      toast.error("Failed to load QR codes.");
+      if (error.code === '22P02') {
+        setDbError('DATABASE SCHEMA ERROR: The user_id column is set to UUID but needs to be TEXT. Please run the provided SQL in your Supabase Dashboard to fix this.');
+      } else {
+        toast.error("Failed to load QR codes: " + error.message);
+      }
     } else {
       setQrCodes(data ?? []);
     }
@@ -95,6 +109,29 @@ export default function Dashboard() {
         </div>
 
         {/* Stats */}
+        {dbError && (
+          <div className="bg-destructive/10 border border-destructive text-destructive px-6 py-5 rounded-2xl mb-8">
+            <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
+              <span className="text-xl">⚠️</span> Database Schema Error
+            </h3>
+            <p className="mb-4">
+              Your Supabase database has an incorrect column type for <code>user_id</code> (it is currently set to UUID, but must be TEXT to match Firebase UIDs).
+            </p>
+            <p className="font-semibold mb-2">To fix this, you must manually run this SQL in your Supabase Dashboard:</p>
+            <pre className="bg-background/50 p-4 rounded-lg overflow-x-auto text-sm text-foreground mb-4 font-mono">
+{`-- Drop the foreign key constraint first
+ALTER TABLE public.qr_codes DROP CONSTRAINT IF EXISTS qr_codes_user_id_fkey;
+
+-- Change the user_id column types to TEXT
+ALTER TABLE public.profiles ALTER COLUMN user_id TYPE TEXT USING user_id::text;
+ALTER TABLE public.qr_codes ALTER COLUMN user_id TYPE TEXT USING user_id::text;
+
+-- Re-add the foreign key constraint
+ALTER TABLE public.qr_codes ADD CONSTRAINT qr_codes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(user_id) ON DELETE CASCADE;`}
+            </pre>
+            <p>I cannot run this for you because I do not have your database password. Please do this manually and refresh the page!</p>
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <div className="stat-card rounded-2xl">
             <div className="flex items-center gap-3 mb-3">
