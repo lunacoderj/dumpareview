@@ -6,25 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, Plus, Target, CheckCircle2, Edit, Trash2, Save, X } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-type Campaign = {
-  id: string;
-  company_name: string;
-  google_review_link: string;
-  target_count: number;
-  current_count: number;
-  is_active: boolean;
-  review_messages?: { id: string; status?: string; message_text?: string }[];
+import { Loader2, Plus, Target, CheckCircle2, Edit, Trash2 } from "lucide-react";
+import { Database } from "@/lib/supabase/types";
+
+type Campaign = Database['public']['Tables']['campaigns']['Row'] & {
+  review_messages?: { id: string; status: string; message_text?: string }[];
 };
 
 export default function AdminCampaigns() {
@@ -39,11 +25,6 @@ export default function AdminCampaigns() {
   const [targetCount, setTargetCount] = useState("10");
   const [bulkMessages, setBulkMessages] = useState("");
   const [existingMessages, setExistingMessages] = useState<any[]>([]);
-  const [originalMessages, setOriginalMessages] = useState<Record<string, string>>({});
-  const [deleteMsgId, setDeleteMsgId] = useState<string | null>(null);
-  const [quickAddText, setQuickAddText] = useState("");
-  const [quickAddLoading, setQuickAddLoading] = useState(false);
-  const [savingMsgId, setSavingMsgId] = useState<string | null>(null);
 
   const fetchCampaigns = async () => {
     try {
@@ -124,8 +105,6 @@ export default function AdminCampaigns() {
     setTargetCount("10");
     setBulkMessages("");
     setExistingMessages([]);
-    setOriginalMessages({});
-    setQuickAddText("");
   }
 
   const toggleActive = async (id: string, currentStatus: boolean) => {
@@ -140,7 +119,8 @@ export default function AdminCampaigns() {
     }
   };
 
-  const performDeleteMessage = async (msgId: string) => {
+  const handleDeleteMessage = async (msgId: string) => {
+    if (!confirm("Delete this message?")) return;
     try {
       await apiFetch(`/api/admin/messages/${msgId}`, { method: 'DELETE' });
       setExistingMessages(prev => prev.filter(m => m.id !== msgId));
@@ -148,62 +128,19 @@ export default function AdminCampaigns() {
       toast({ title: "Deleted", description: "Message deleted successfully." });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
-    } finally {
-      setDeleteMsgId(null);
     }
   };
 
   const handleUpdateMessage = async (msgId: string, newText: string) => {
-    if (!newText.trim()) {
-      toast({ title: "Message cannot be empty", variant: "destructive" });
-      return;
-    }
-    setSavingMsgId(msgId);
     try {
       await apiFetch(`/api/admin/messages/${msgId}`, { 
         method: 'PUT',
-        body: JSON.stringify({ message_text: newText.trim() })
+        body: JSON.stringify({ message_text: newText })
       });
-      setOriginalMessages(prev => ({ ...prev, [msgId]: newText.trim() }));
       toast({ title: "Updated", description: "Message updated successfully." });
       fetchCampaigns();
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
-    } finally {
-      setSavingMsgId(null);
-    }
-  };
-
-  const handleRevertMessage = (msgId: string) => {
-    const original = originalMessages[msgId];
-    setExistingMessages(prev =>
-      prev.map(m => (m.id === msgId ? { ...m, message_text: original } : m))
-    );
-  };
-
-  const handleQuickAddMessages = async () => {
-    if (!editingId) return;
-    const messages = quickAddText.split('\n').map(m => m.trim()).filter(m => m.length > 0);
-    if (messages.length === 0) return;
-    setQuickAddLoading(true);
-    try {
-      await apiFetch(`/api/admin/campaigns/${editingId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ messages })
-      });
-      toast({ title: "Added", description: `${messages.length} message(s) added.` });
-      setQuickAddText("");
-      // Refetch to pull in new messages with their IDs
-      const data = await apiFetch('/api/admin/campaigns');
-      setCampaigns(data || []);
-      const updated = (data || []).find((c: any) => c.id === editingId);
-      const msgs = updated?.review_messages || [];
-      setExistingMessages(msgs);
-      setOriginalMessages(Object.fromEntries(msgs.map((m: any) => [m.id, m.message_text || ""])));
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } finally {
-      setQuickAddLoading(false);
     }
   };
 
@@ -224,10 +161,7 @@ export default function AdminCampaigns() {
     setReviewLink(camp.google_review_link);
     setTargetCount(camp.target_count.toString());
     setBulkMessages(""); // Provide empty bulk messages, adding them appends
-    const msgs = camp.review_messages || [];
-    setExistingMessages(msgs);
-    setOriginalMessages(Object.fromEntries(msgs.map((m: any) => [m.id, m.message_text || ""])));
-    setQuickAddText("");
+    setExistingMessages(camp.review_messages || []);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -270,121 +204,32 @@ export default function AdminCampaigns() {
                 />
               </div>
 
-              {editingId && (
-                <div className="space-y-3 mt-4 border-t pt-4">
-                  <div className="flex items-center justify-between">
-                    <Label>Existing Messages ({existingMessages.length})</Label>
+              {editingId && existingMessages.length > 0 && (
+                <div className="space-y-2 mt-4">
+                  <Label>Existing Messages</Label>
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                    {existingMessages.map((msg, i) => (
+                      <div key={msg.id} className="flex gap-2 items-start">
+                        <Textarea 
+                          className="flex-1 min-h-[40px] py-2" 
+                          value={msg.message_text || ""} 
+                          onChange={(e) => {
+                            const newMsgs = [...existingMessages];
+                            newMsgs[i].message_text = e.target.value;
+                            setExistingMessages(newMsgs);
+                          }}
+                        />
+                        <div className="flex flex-col gap-1">
+                          <Button type="button" size="sm" onClick={() => handleUpdateMessage(msg.id, msg.message_text)} title="Save">
+                            <CheckCircle2 className="h-4 w-4" />
+                          </Button>
+                          <Button type="button" size="sm" variant="destructive" onClick={() => handleDeleteMessage(msg.id)} title="Delete">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-
-                  {/* Quick add inline */}
-                  <div className="space-y-2 rounded-md border border-dashed border-zinc-300 dark:border-zinc-700 p-3 bg-zinc-50/50 dark:bg-zinc-900/30">
-                    <Label className="text-xs font-medium text-muted-foreground">
-                      Add more messages (one per line)
-                    </Label>
-                    <Textarea
-                      rows={2}
-                      placeholder="New message 1&#10;New message 2"
-                      value={quickAddText}
-                      onChange={e => setQuickAddText(e.target.value)}
-                      className="text-sm"
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={handleQuickAddMessages}
-                      disabled={quickAddLoading || !quickAddText.trim()}
-                      className="w-full"
-                    >
-                      {quickAddLoading ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                      ) : (
-                        <Plus className="h-3.5 w-3.5 mr-1.5" />
-                      )}
-                      Add Messages
-                    </Button>
-                  </div>
-
-                  {existingMessages.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      No messages yet. Add some above.
-                    </p>
-                  ) : (
-                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                      {existingMessages.map((msg, i) => {
-                        const originalText = originalMessages[msg.id] ?? "";
-                        const currentText = msg.message_text || "";
-                        const isDirty = currentText !== originalText;
-                        const isSaving = savingMsgId === msg.id;
-                        return (
-                          <div
-                            key={msg.id}
-                            className={`rounded-md border p-2 transition-colors ${
-                              isDirty
-                                ? "border-amber-300 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20"
-                                : "border-zinc-200 dark:border-zinc-800"
-                            }`}
-                          >
-                            <div className="flex gap-2 items-start">
-                              <span className="text-xs text-muted-foreground pt-2 min-w-[20px] text-right">
-                                {i + 1}.
-                              </span>
-                              <Textarea
-                                className="flex-1 min-h-[40px] py-2 text-sm resize-none"
-                                value={currentText}
-                                onChange={(e) => {
-                                  const newMsgs = [...existingMessages];
-                                  newMsgs[i].message_text = e.target.value;
-                                  setExistingMessages(newMsgs);
-                                }}
-                              />
-                              <div className="flex flex-col gap-1">
-                                {isDirty && (
-                                  <>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={() => handleUpdateMessage(msg.id, currentText)}
-                                      title="Save changes"
-                                      disabled={isSaving}
-                                      className="h-7 w-7 p-0"
-                                    >
-                                      {isSaving ? (
-                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      ) : (
-                                        <Save className="h-3.5 w-3.5" />
-                                      )}
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => handleRevertMessage(msg.id)}
-                                      title="Discard changes"
-                                      disabled={isSaving}
-                                      className="h-7 w-7 p-0"
-                                    >
-                                      <X className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </>
-                                )}
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => setDeleteMsgId(msg.id)}
-                                  title="Delete message"
-                                  className="h-7 w-7 p-0"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -458,26 +303,6 @@ export default function AdminCampaigns() {
           )}
         </div>
       </div>
-
-      <AlertDialog open={!!deleteMsgId} onOpenChange={(open) => !open && setDeleteMsgId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this message?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This message will be permanently removed from the campaign. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteMsgId && performDeleteMessage(deleteMsgId)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
