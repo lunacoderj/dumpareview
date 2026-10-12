@@ -1,23 +1,23 @@
 ## Current Objective
-Provide guidance on Vercel environment variable settings (Config vs Secret) and Render backend deployment requirements, commit Firebase project migration and automatic account data sync logic.
+Restore backend `server/` directory to repository, configure CORS and Firebase Project ID for Render, and commit/push to `origin/main` to resolve Render `Root directory "server" does not exist` build error.
 
 ## Current Status
-Completed - Frontend builds cleanly (`npm run build`). Account data synchronization logic implemented to preserve all QR codes and scan history across Firebase accounts. Clear instructions prepared for Vercel and Render configurations.
+Completed - `server/` directory restored from git history, updated with `dumpareview.online` CORS and `dumpareviews` fallback, and pushed to `origin/main`. Render will now successfully locate the directory and deploy.
 
 ## Files Being Worked On
-- `.env`
-- `src/lib/accountSync.ts`
-- `src/pages/Dashboard.tsx`
-- `src/pages/Analytics.tsx`
-- `server/.env`
+- `server/package.json`
+- `server/package-lock.json`
+- `server/index.js`
+- `server/check_db.js`
+- `server/set_admin.js`
+- `PROJECT_MEMORY/BUGS_AND_FIXES.md`
 - `PROJECT_MEMORY/CHANGELOG.md`
 - `PROJECT_MEMORY/CURRENT_TASK.md`
 
 ## Implementation Progress
-- [x] Update local `.env` with new Firebase project `dumpareviews`
-- [x] Create `src/lib/accountSync.ts` with automated email-based QR code migration across Firebase accounts
-- [x] Integrate `syncUserAccount` into `Dashboard.tsx` and `Analytics.tsx`
-- [x] Fix import paths and verify `npm run build` passes with 0 errors
-- [x] Update `server/.env` for `dumpareviews` and `https://dumpareview.online`
-- [x] Document Vercel "Config vs Secret" distinction for `VITE_` variables
-- [x] Document Render backend environment variable requirements (`FRONTEND_URL`, `FIREBASE_PROJECT_ID`)
+- [x] Identify root cause of Render failure: `server/` was wiped by an earlier revert commit (`24b045a`)
+- [x] Restore `server/` directory files from commit `c3eda269`
+- [x] Update CORS allowed origins in `server/index.js` for `dumpareview.online`
+- [x] Update Firebase projectId fallback in `server/index.js` to `dumpareviews`
+- [x] Test server syntax with `node -c server/index.js`
+- [x] Commit and push `server/` to `origin/main`

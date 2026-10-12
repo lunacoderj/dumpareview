@@ -3,6 +3,30 @@
 All changes to this project are recorded here in reverse-chronological order.
 This file is append-only — do not rewrite or remove previous entries.
 
+## 2026-10-12 (Render Deployment Fix & Backend Server Restoration)
+
+### Task
+Fix Render deployment failure: `Root directory "server" does not exist`.
+
+### Result
+- Restored `server/` codebase (`index.js`, `package.json`, `package-lock.json`, `check_db.js`, `set_admin.js`) which had been removed by an earlier automated revert commit.
+- Updated `server/index.js` to whitelist `https://dumpareview.online` and `https://www.dumpareview.online` in CORS.
+- Updated `server/index.js` default Firebase project ID fallback to `dumpareviews`.
+- Verified syntax with `node -c server/index.js`.
+
+### Files Restored / Created
+- `server/package.json`
+- `server/package-lock.json`
+- `server/index.js`
+- `server/check_db.js`
+- `server/set_admin.js`
+
+### Files Modified
+- `server/index.js`
+- `PROJECT_MEMORY/BUGS_AND_FIXES.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+
 ## 2026-10-12 (Firebase Project Migration & Account Data Sync)
 
 ### Task

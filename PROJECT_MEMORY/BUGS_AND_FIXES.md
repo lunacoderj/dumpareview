@@ -5,6 +5,16 @@
 
 ## Resolved Bugs
 
+### 2026-10-12 — Missing Server Directory on Render Deployment
+- **Symptoms**: Render deployment failed with:
+  ```
+  ==> Root directory "server" does not exist. Verify the Root Directory configured in your service settings.
+  ```
+- **Root Cause**: An upstream bot revert commit (`24b045a`) previously deleted the entire `server/` folder from git. Since Render was configured with Root Directory = `server`, it couldn't locate the directory upon checkout.
+- **Affected Files**: `server/package.json`, `server/package-lock.json`, `server/index.js`, `server/check_db.js`, `server/set_admin.js`
+- **Fix**: Restored `server/` directory from commit `c3eda269`, updated CORS allowed origins to include `dumpareview.online`, updated Firebase Admin default fallback project to `dumpareviews`, and committed to `main`.
+- **Status**: Fixed
+
 ### 2026-10-12 — Service Worker Stale-Build Cache Trap
 - **Symptoms**: Browser showed:
   ```
