@@ -162,7 +162,7 @@ export default function Home() {
               Ready to Grow Your Reviews?
             </h2>
             <p className="text-white/75 text-lg mb-8">
-              Join businesses already using QReview Pro to build their online reputation.
+              Join businesses already using DumpaReview to build their online reputation.
             </p>
             <Button
               size="lg"
@@ -177,17 +177,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="border-t border-border py-8">
-        <div className="mx-auto max-w-7xl px-4 text-center text-sm text-muted-foreground">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <QrCode className="h-4 w-4 text-primary" />
-            <span className="font-semibold text-primary">QReview Pro</span>
-          </div>
-          <p>© {new Date().getFullYear()} QReview Pro. All rights reserved.</p>
-        </div>
-      </footer>
     </div>
   );
 }

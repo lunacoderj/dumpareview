@@ -37,7 +37,7 @@ export default function Navbar() {
             <div className="flex h-9 w-9 items-center justify-center rounded-xl hero-gradient shadow-primary group-hover:scale-105 transition-transform">
               <QrCode className="h-5 w-5 text-white" />
             </div>
-            <span className="font-bold text-xl text-gradient font-display">QReview Pro</span>
+            <span className="font-bold text-xl text-gradient font-display">DumpaReview</span>
           </Link>
 
           {/* Desktop nav */}

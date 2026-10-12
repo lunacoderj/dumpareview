@@ -1,0 +1,76 @@
+# Changelog
+
+All changes to this project are recorded here in reverse-chronological order.
+This file is append-only — do not rewrite or remove previous entries.
+
+## 2026-10-12 (Domain Migration & Legal/SEO Expansion)
+
+### Task
+Migrate project domain to `dumpareview.online`, update sitemap and robots.txt, enrich SEO keywords targeting clients across industries, build Terms & Conditions, Privacy Policy, Cookie Policy, and Cookie Consent banner, and provide fix for Firebase Authorized Domain registration error.
+
+### Result
+- Added `public/sitemap.xml` with all canonical routes for `dumpareview.online`.
+- Updated `public/robots.txt` with sitemap reference and protected dashboard paths.
+- Updated `index.html` with canonical tag, client-tailored keywords (restaurants, salons, clinics, retail, auto services), OG/Twitter meta tags, and JSON-LD schema.
+- Created `src/pages/Terms.tsx`, `src/pages/PrivacyPolicy.tsx`, and `src/pages/CookiePolicy.tsx` with complete compliance details.
+- Created `src/components/Footer.tsx` and `src/components/CookieConsent.tsx`.
+- Registered routes in `src/App.tsx` and updated global layout.
+- Purged all remaining references to legacy branding across UI components (`Navbar.tsx`, `ScanRedirect.tsx`, `Home.tsx`, `Auth.tsx`, `index.css`).
+- Built production bundle cleanly.
+
+### Files Created
+- `public/sitemap.xml`
+- `src/components/Footer.tsx`
+- `src/components/CookieConsent.tsx`
+- `src/pages/Terms.tsx`
+- `src/pages/PrivacyPolicy.tsx`
+- `src/pages/CookiePolicy.tsx`
+
+### Files Modified
+- `index.html`
+- `public/robots.txt`
+- `src/App.tsx`
+- `src/pages/Home.tsx`
+- `src/pages/Auth.tsx`
+- `src/pages/ScanRedirect.tsx`
+- `src/components/Navbar.tsx`
+- `src/index.css`
+- `PROJECT_MEMORY/PROJECT_STATE.md`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+
+---
+
+## 2026-10-12
+
+### Task
+Diagnose and fix production errors: 404 for `/assets/index-BjyiK1Tw.css`, 404/invalid format for `/pwa-192.png`, service worker fetch errors (`sw.js:27`), and Cloudflare Pages deployment issues.
+
+### Result
+Fixed Service Worker caching strategy (switched to Network-First navigation with cache cleanup), converted PWA icons to genuine PNG format, added `public/_redirects` for Cloudflare Pages SPA client routing, corrected manifest metadata to DumpaReview, added `reg.update()` in `index.html`, and resolved 4 ESLint build-blocking errors across UI components. Built successfully.
+
+### Files Created
+- `public/_redirects`
+- `PROJECT_MEMORY/PROJECT_STATE.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+- `PROJECT_MEMORY/NEXT_STEPS.md`
+- `PROJECT_MEMORY/ARCHITECTURE.md`
+- `PROJECT_MEMORY/BUGS_AND_FIXES.md`
+
+### Files Modified
+- `public/sw.js` — updated cache name to `dumpareview-v2`, added old cache purging on `activate`, implemented Network-First strategy for SPA navigation requests, and added graceful offline fallback.
+- `public/manifest.json` — updated app name and short name to `DumpaReview`.
+- `public/pwa-192.png` — replaced disguised 1024x1024 JPEG with a genuine 192x192 PNG.
+- `public/pwa-512.png` — replaced disguised 1024x1024 JPEG with a genuine 512x512 PNG.
+- `index.html` — added `reg.update()` to service worker registration callback.
+- `src/components/ui/command.tsx` — changed empty interface `CommandDialogProps` to type alias.
+- `src/components/ui/textarea.tsx` — changed empty interface `TextareaProps` to type alias.
+- `src/pages/ScanRedirect.tsx` — eliminated `any` type assertion on `(window as any).adsbygoogle`.
+- `tailwind.config.ts` — replaced `require("tailwindcss-animate")` with ES module import.
+
+---
+
+## PROJECT MEMORY INITIALIZATION — CODEBASE BASELINE
+- Baseline established on 2026-10-12.
+- Repository: `https://github.com/lunacoderj/dumpareview`
+- Branch: `main`

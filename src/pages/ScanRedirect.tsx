@@ -27,7 +27,7 @@ export default function ScanRedirect() {
     if (adsInitialized.current) return;
     
     try {
-      const adsbygoogle = (window as any).adsbygoogle;
+      const adsbygoogle = (window as unknown as { adsbygoogle?: unknown[] }).adsbygoogle;
       if (adsbygoogle) {
         adsbygoogle.push({});
         adsbygoogle.push({});
@@ -112,7 +112,7 @@ export default function ScanRedirect() {
           <div className="h-9 w-9 hero-gradient rounded-xl flex items-center justify-center shadow-lg">
             <QrCode className="h-5 w-5 text-white" />
           </div>
-          <span className="font-extrabold text-xl tracking-tight text-gradient">QReview Pro</span>
+          <span className="font-extrabold text-xl tracking-tight text-gradient">DumpaReview</span>
         </div>
 
         {scanState === "loading" && (
@@ -183,7 +183,7 @@ export default function ScanRedirect() {
 
         <div className="mt-10 pt-8 border-t border-border/40">
           <p className="text-[11px] font-bold text-muted-foreground/60 flex items-center justify-center gap-1.5 uppercase tracking-widest">
-            Verified by <span className="text-primary/80 font-black">QReview Pro</span>
+            Verified by <span className="text-primary/80 font-black">DumpaReview</span>
           </p>
         </div>
       </div>

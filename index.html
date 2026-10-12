@@ -3,33 +3,74 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- TODO: Set the document title to the name of your application -->
-    <title>DumpaReview - Grow your business with 5-star reviews</title>
-    <meta name="description" content="Collect and manage Google reviews effortlessly with smart QR codes.">
+    <title>DumpaReview - Smart Google Reviews QR Code Generator for Businesses</title>
+    <meta
+      name="description"
+      content="Turn every customer into 5-star Google reviews. DumpaReview provides smart dynamic QR codes with rotating pre-written review templates for restaurants, salons, clinics, and local businesses."
+    />
+    <meta
+      name="keywords"
+      content="Google reviews QR code, get 5 star reviews, smart QR code generator, Google review management for business, customer review generator, boost Google ranking, restaurant Google reviews, salon Google reviews, dental clinic reviews, medical practice reviews, auto repair reviews, local SEO business growth, NFC review stand, DumpaReview, dumpareview.online"
+    />
     <meta name="author" content="DumpaReview" />
+    <link rel="canonical" href="https://dumpareview.online/" />
 
+    <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="DumpaReview">
-    <meta property="og:description" content="Collect and manage Google reviews effortlessly with smart QR codes.">
+    <meta property="og:site_name" content="DumpaReview" />
+    <meta property="og:title" content="DumpaReview - Smart Google Reviews QR Code Generator" />
+    <meta
+      property="og:description"
+      content="Turn every customer into 5-star Google reviews effortlessly with smart dynamic QR codes and rotating templates."
+    />
+    <meta property="og:url" content="https://dumpareview.online/" />
+    <meta property="og:image" content="https://dumpareview.online/pwa-512.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
 
+    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="DumpaReview">
-    <meta name="twitter:description" content="Collect and manage Google reviews effortlessly with smart QR codes.">
+    <meta name="twitter:title" content="DumpaReview - Smart Google Reviews QR Code Generator" />
+    <meta
+      name="twitter:description"
+      content="Turn every customer into 5-star Google reviews effortlessly with smart dynamic QR codes."
+    />
+    <meta name="twitter:image" content="https://dumpareview.online/pwa-512.png" />
     
-    <meta name="google-adsense-account" content="ca-pub-6222108934557142">
-    
+    <!-- Google AdSense -->
+    <meta name="google-adsense-account" content="ca-pub-6222108934557142" />
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6222108934557142" crossorigin="anonymous"></script>
+
+    <!-- PWA Settings -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#0f172a" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    
-    <!-- Google AdSense -->
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6222108934557142" crossorigin="anonymous"></script>
 
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "DumpaReview",
+        "url": "https://dumpareview.online",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "All",
+        "description": "Smart Google reviews QR code platform helping businesses collect authentic 5-star reviews with rotating templates.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    </script>
+
+    <!-- Service Worker Registration -->
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').then(reg => {
+            reg.update();
             console.log('SW registered');
           }).catch(err => {
             console.log('SW failed', err);
