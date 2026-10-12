@@ -1,17 +1,21 @@
 ## Current Objective
-Resolve Supabase `401 Unauthorized` (`new row violates row-level security policy for table "profiles"` / `"qr_codes"`) during QR generation.
+Implement branded QR code downloads featuring business name, review badge, and centered QR code with preserved quiet zone.
 
 ## Current Status
-Completed - Root cause identified (Firebase Auth vs Supabase Auth RLS mismatch). SQL script created and updated in `supabase_schema.sql` to grant necessary table permissions.
+Completed - Created `src/lib/qrDownload.ts`, wired into `GenerateQR.tsx` and `QRDetail.tsx`, verified with `npm run build`, and committed to `main`.
 
 ## Files Being Worked On
-- `supabase_schema.sql`
-- `PROJECT_MEMORY/BUGS_AND_FIXES.md`
+- `src/lib/qrDownload.ts`
+- `src/pages/GenerateQR.tsx`
+- `src/pages/QRDetail.tsx`
 - `PROJECT_MEMORY/CHANGELOG.md`
 - `PROJECT_MEMORY/CURRENT_TASK.md`
 
 ## Implementation Progress
-- [x] Trace error: `42501` returned by PostgREST when inserting into `profiles` and `qr_codes`
-- [x] Identify root cause: Supabase RLS policies require `auth.uid() = user_id`, but client authenticates via Firebase Auth so PostgREST executes as role `anon` with `auth.uid() = NULL`
-- [x] Update `supabase_schema.sql` with RLS fix scripts
-- [x] Prepare step-by-step instructions and SQL snippet for user to execute in Supabase SQL editor
+- [x] Design high-resolution 640x800px card template
+- [x] Implement dynamic font-fitting so long business names never truncate or overlap
+- [x] Add review stars and Google review call-to-action
+- [x] Position QR code with full ISO standard quiet-zone margins
+- [x] Add footer instructions and dumpareview branding
+- [x] Sanitize downloaded filename to `{business_name}_QR_Code.png`
+- [x] Verify production build passes cleanly

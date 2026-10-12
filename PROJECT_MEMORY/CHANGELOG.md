@@ -3,6 +3,30 @@
 All changes to this project are recorded here in reverse-chronological order.
 This file is append-only — do not rewrite or remove previous entries.
 
+## 2026-10-12 (Branded QR Code Download with Business Name)
+
+### Task
+Display the business name on the downloaded QR code image without interfering with the scanner quiet-zone, making each downloaded file immediately identifiable.
+
+### Result
+- Created `src/lib/qrDownload.ts` providing high-resolution (640x800px) branded card rendering with:
+  - Business name at the top (with dynamic auto-fit font sizing).
+  - 5 gold stars and "Review us on Google" subtitle.
+  - Centered QR code with generous quiet-zone margin preserving 100% scan reliability.
+  - "Scan with camera to review" footer instructions and domain watermark.
+  - Meaningful file naming (`{business_name}_QR_Code.png`).
+- Integrated into `src/pages/GenerateQR.tsx` and `src/pages/QRDetail.tsx`.
+- Verified production build completes cleanly (`npm run build`).
+
+### Files Created
+- `src/lib/qrDownload.ts`
+
+### Files Modified
+- `src/pages/GenerateQR.tsx`
+- `src/pages/QRDetail.tsx`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+
 ## 2026-10-12 (Supabase RLS Policy Fix for Firebase Auth)
 
 ### Task

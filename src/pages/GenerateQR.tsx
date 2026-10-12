@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { QrCode, Plus, Trash2, Download, ArrowLeft, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
+import { downloadQRCodeWithBusinessName } from "@/lib/qrDownload";
 
 interface GeneratedQR {
   id: string;
@@ -108,20 +109,12 @@ export default function GenerateQR() {
     if (!qrRef.current) return;
     const svg = qrRef.current.querySelector("svg");
     if (!svg) return;
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    const img = new Image();
-    canvas.width = 400;
-    canvas.height = 400;
-    img.onload = () => {
-      ctx?.drawImage(img, 0, 0, 400, 400);
-      const a = document.createElement("a");
-      a.download = `${generated?.name ?? "qr"}-qrcode.png`;
-      a.href = canvas.toDataURL("image/png");
-      a.click();
-    };
-    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+    const success = downloadQRCodeWithBusinessName(svg, generated?.name || name || "Business");
+    if (success) {
+      toast.success("QR code downloaded with business name!");
+    } else {
+      toast.error("Failed to download QR code image.");
+    }
   };
 
   const handleReset = () => {
