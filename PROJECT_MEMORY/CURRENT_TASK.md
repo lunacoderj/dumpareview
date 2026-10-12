@@ -1,36 +1,23 @@
 ## Current Objective
-Commit and push all fixes, legal pages, SEO keywords, sitemap, and domain migration changes to GitHub repository (`origin/main`).
+Provide guidance on Vercel environment variable settings (Config vs Secret) and Render backend deployment requirements, commit Firebase project migration and automatic account data sync logic.
 
 ## Current Status
-Completed - Changes committed (commit 886445d) and pushed to origin/main successfully. Working tree is clean.
+Completed - Frontend builds cleanly (`npm run build`). Account data synchronization logic implemented to preserve all QR codes and scan history across Firebase accounts. Clear instructions prepared for Vercel and Render configurations.
 
 ## Files Being Worked On
-- `index.html`
-- `public/sitemap.xml`
-- `public/robots.txt`
-- `public/manifest.json`
-- `src/App.tsx`
-- `src/components/Footer.tsx`
-- `src/components/CookieConsent.tsx`
-- `src/pages/Terms.tsx`
-- `src/pages/PrivacyPolicy.tsx`
-- `src/pages/CookiePolicy.tsx`
-- `src/pages/Home.tsx`
-- `src/pages/Auth.tsx`
-- `src/pages/ScanRedirect.tsx`
-- `src/components/Navbar.tsx`
-- `src/index.css`
+- `.env`
+- `src/lib/accountSync.ts`
+- `src/pages/Dashboard.tsx`
+- `src/pages/Analytics.tsx`
+- `server/.env`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
 
 ## Implementation Progress
-- [x] Create comprehensive `src/components/Footer.tsx` with links to solutions, target clients, and legal pages
-- [x] Create modern `src/components/CookieConsent.tsx` banner with local preferences storage
-- [x] Create full `src/pages/Terms.tsx` covering Google Reviews policies, anti-gating, service definitions, and liability
-- [x] Create full `src/pages/PrivacyPolicy.tsx` covering Firebase Auth, Supabase, Google AdSense disclosures, and GDPR/CCPA user rights
-- [x] Create full `src/pages/CookiePolicy.tsx` with detailed cookie inventory and browser management guides
-- [x] Wire all legal routes (`/terms`, `/privacy`, `/cookies`) into `src/App.tsx` inside `AppLayout`
-- [x] Create `public/sitemap.xml` for `https://dumpareview.online`
-- [x] Update `public/robots.txt` pointing to `https://dumpareview.online/sitemap.xml` and disallowing private dashboard routes
-- [x] Update `index.html` with target-client SEO keywords (restaurants, salons, dental/medical clinics, retail, auto services), canonical link, Open Graph, Twitter cards, and JSON-LD schema
-- [x] Clean up all legacy `QReview Pro` text in `Navbar.tsx`, `Auth.tsx`, `ScanRedirect.tsx`, `Home.tsx`, and `index.css`
-- [x] Diagnose and formulate direct fixes for Firebase "Error adding to authorized domain list"
-- [ ] Verify production build completion
+- [x] Update local `.env` with new Firebase project `dumpareviews`
+- [x] Create `src/lib/accountSync.ts` with automated email-based QR code migration across Firebase accounts
+- [x] Integrate `syncUserAccount` into `Dashboard.tsx` and `Analytics.tsx`
+- [x] Fix import paths and verify `npm run build` passes with 0 errors
+- [x] Update `server/.env` for `dumpareviews` and `https://dumpareview.online`
+- [x] Document Vercel "Config vs Secret" distinction for `VITE_` variables
+- [x] Document Render backend environment variable requirements (`FRONTEND_URL`, `FIREBASE_PROJECT_ID`)

@@ -3,6 +3,28 @@
 All changes to this project are recorded here in reverse-chronological order.
 This file is append-only — do not rewrite or remove previous entries.
 
+## 2026-10-12 (Firebase Project Migration & Account Data Sync)
+
+### Task
+Update environment variables with new Firebase project credentials (`dumpareviews`), ensure automatic transfer of user QR codes and analytics from old Firebase account (`jagadeeshdashboard`) to prevent data loss, verify Render backend configuration, and configure Vercel environment variables.
+
+### Result
+- Updated `.env` with new Firebase credentials (`dumpareviews`).
+- Created `src/lib/accountSync.ts` to automatically query and migrate QR codes by email when a user logs in with the new Firebase account.
+- Integrated `syncUserAccount` in `src/pages/Dashboard.tsx` and `src/pages/Analytics.tsx`.
+- Updated `server/.env` with `FRONTEND_URL=https://dumpareview.online` and `FIREBASE_PROJECT_ID=dumpareviews`.
+- Verified production build (`npm run build`) completed successfully with 0 errors.
+
+### Files Created
+- `src/lib/accountSync.ts`
+
+### Files Modified
+- `.env`
+- `src/lib/accountSync.ts`
+- `src/pages/Dashboard.tsx`
+- `src/pages/Analytics.tsx`
+- `server/.env`
+
 ## 2026-10-12 (Domain Migration & Legal/SEO Expansion)
 
 ### Task

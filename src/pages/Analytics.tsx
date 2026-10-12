@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase/client";
+import { syncUserAccount } from "@/lib/accountSync";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,6 +61,8 @@ export default function Analytics() {
   }, [user]);
 
   const fetchData = async () => {
+    if (!user) return;
+    await syncUserAccount(user);
     const [{ data: qrs }, { data: events }] = await Promise.all([
       supabase
         .from("qr_codes")

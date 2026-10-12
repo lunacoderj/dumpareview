@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase/client";
+import { syncUserAccount } from "@/lib/accountSync";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,13 +36,8 @@ export default function Dashboard() {
 
   const fetchQRCodes = async () => {
     if (!user) return;
-    // Ensure profile exists in Supabase so foreign keys (like qr_codes) don't fail with 409 Conflict
-    await supabase.from("profiles").upsert({
-      user_id: user.uid,
-      full_name: user.displayName || "Unknown",
-      email: user.email || "",
-      avatar_url: user.photoURL || ""
-    }, { onConflict: "user_id" });
+    // Auto-sync profile and adopt QR codes from previous Firebase accounts matching this email
+    await syncUserAccount(user);
 
     const { data, error } = await supabase
       .from("qr_codes")
