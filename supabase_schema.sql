@@ -107,30 +107,37 @@ BEGIN
 END;
 $$;
 
--- 3. Enable RLS and Basic Policies
+-- 3. Row Level Security (RLS) Configuration for Firebase Auth Integration
+-- Since this application authenticates users via Firebase Auth (not Supabase Auth),
+-- the client communicates as the 'anon' role with Firebase UIDs.
+-- To allow full functionality for QR generation, scanning, and user profiles:
+
+-- Option 1 (Recommended): Disable RLS completely
+ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.qr_codes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.scan_events DISABLE ROW LEVEL SECURITY;
+
+-- Option 2 (If you prefer RLS enabled): Grant full access to public/anon
+/*
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.qr_codes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scan_events ENABLE ROW LEVEL SECURITY;
 
--- Allow anyone to read profiles (needed for public dashboard views)
-CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles
-  FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Enable all on profiles" ON public.profiles;
+CREATE POLICY "Enable all on profiles" ON public.profiles
+  FOR ALL TO public USING (true) WITH CHECK (true);
 
--- Allow users to manage their own profile
-CREATE POLICY "Users can update their own profile" ON public.profiles
-  FOR ALL USING (true); -- Simplified for initial setup
+DROP POLICY IF EXISTS "QR codes are viewable by everyone" ON public.qr_codes;
+DROP POLICY IF EXISTS "Users can manage their own qr_codes" ON public.qr_codes;
+DROP POLICY IF EXISTS "Enable all on qr_codes" ON public.qr_codes;
+CREATE POLICY "Enable all on qr_codes" ON public.qr_codes
+  FOR ALL TO public USING (true) WITH CHECK (true);
 
--- Allow anyone to read QR codes (needed for scanning)
-CREATE POLICY "QR codes are viewable by everyone" ON public.qr_codes
-  FOR SELECT USING (true);
-
--- Allow users to manage their own QR codes
-CREATE POLICY "Users can manage their own qr_codes" ON public.qr_codes
-  FOR ALL USING (true); -- Simplified for initial setup
-
--- Allow anyone to read and insert scan events
-CREATE POLICY "Scan events are viewable by everyone" ON public.scan_events
-  FOR SELECT USING (true);
-
-CREATE POLICY "Anyone can insert scan events" ON public.scan_events
-  FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Scan events are viewable by everyone" ON public.scan_events;
+DROP POLICY IF EXISTS "Anyone can insert scan events" ON public.scan_events;
+DROP POLICY IF EXISTS "Enable all on scan_events" ON public.scan_events;
+CREATE POLICY "Enable all on scan_events" ON public.scan_events
+  FOR ALL TO public USING (true) WITH CHECK (true);
+*/

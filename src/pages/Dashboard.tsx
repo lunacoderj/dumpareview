@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase/client";
-import { syncUserAccount } from "@/lib/accountSync";
+import { syncUserAccount, getUserAccountIds } from "@/lib/accountSync";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,10 +39,12 @@ export default function Dashboard() {
     // Auto-sync profile and adopt QR codes from previous Firebase accounts matching this email
     await syncUserAccount(user);
 
+    const userIds = await getUserAccountIds(user);
+
     const { data, error } = await supabase
       .from("qr_codes")
       .select("*")
-      .eq("user_id", user.uid)
+      .in("user_id", userIds)
       .order("created_at", { ascending: false });
 
     if (error) {

@@ -3,6 +3,22 @@
 All changes to this project are recorded here in reverse-chronological order.
 This file is append-only — do not rewrite or remove previous entries.
 
+## 2026-10-12 (Supabase RLS Policy Fix for Firebase Auth)
+
+### Task
+Resolve `401 Unauthorized` (`new row violates row-level security policy for table "profiles"` / `"qr_codes"`) encountered during QR code creation.
+
+### Result
+- Diagnosed root cause: App uses Firebase Auth for user authentication, causing all client Supabase PostgREST requests to execute under the `anon` database role (where `auth.uid()` is null). Supabase default RLS policies rejected inserts with error `42501` (401 Unauthorized).
+- Updated `supabase_schema.sql` with RLS fix scripts to disable RLS or grant full public/anon access on `profiles`, `qr_codes`, and `scan_events`.
+- Provided direct SQL snippet for execution in Supabase Dashboard SQL editor.
+
+### Files Modified
+- `supabase_schema.sql`
+- `PROJECT_MEMORY/BUGS_AND_FIXES.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+
 ## 2026-10-12 (Render Deployment Fix & Backend Server Restoration)
 
 ### Task

@@ -5,6 +5,18 @@
 
 ## Resolved Bugs
 
+### 2026-10-12 — Supabase 401 Unauthorized on QR Code Generation & Profile Upsert
+- **Symptoms**: Browser console showed:
+  ```text
+  POST https://tvkdglzzzmzxmunbkkyk.supabase.co/rest/v1/profiles?on_conflict=user_id 401 (Unauthorized)
+  POST https://tvkdglzzzmzxmunbkkyk.supabase.co/rest/v1/qr_codes?select=* 401 (Unauthorized)
+  {"code":"42501","message":"new row violates row-level security policy for table profiles"}
+  ```
+- **Root Cause**: The application authenticates users via Firebase Auth (Google Sign-In) rather than Supabase Auth. Consequently, all browser REST calls to Supabase PostgREST operate under the `anon` role (where Supabase `auth.uid()` is `NULL`). Supabase Row Level Security (RLS) policies restricted inserts to authenticated Supabase users or checked `auth.uid() = user_id`, rejecting Firebase client requests with error 42501 (mapped to 401 Unauthorized).
+- **Affected Files**: `supabase_schema.sql`, `src/pages/GenerateQR.tsx`, `src/pages/Dashboard.tsx`
+- **Fix**: Formulated migration SQL to disable RLS or allow public/anon insert/update access for `profiles`, `qr_codes`, and `scan_events`, and updated `supabase_schema.sql`.
+- **Status**: Documented with migration SQL for execution in Supabase Dashboard.
+
 ### 2026-10-12 — Missing Server Directory on Render Deployment
 - **Symptoms**: Render deployment failed with:
   ```

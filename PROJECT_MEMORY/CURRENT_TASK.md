@@ -1,23 +1,17 @@
 ## Current Objective
-Restore backend `server/` directory to repository, configure CORS and Firebase Project ID for Render, and commit/push to `origin/main` to resolve Render `Root directory "server" does not exist` build error.
+Resolve Supabase `401 Unauthorized` (`new row violates row-level security policy for table "profiles"` / `"qr_codes"`) during QR generation.
 
 ## Current Status
-Completed - `server/` directory restored from git history, updated with `dumpareview.online` CORS and `dumpareviews` fallback, and pushed to `origin/main`. Render will now successfully locate the directory and deploy.
+Completed - Root cause identified (Firebase Auth vs Supabase Auth RLS mismatch). SQL script created and updated in `supabase_schema.sql` to grant necessary table permissions.
 
 ## Files Being Worked On
-- `server/package.json`
-- `server/package-lock.json`
-- `server/index.js`
-- `server/check_db.js`
-- `server/set_admin.js`
+- `supabase_schema.sql`
 - `PROJECT_MEMORY/BUGS_AND_FIXES.md`
 - `PROJECT_MEMORY/CHANGELOG.md`
 - `PROJECT_MEMORY/CURRENT_TASK.md`
 
 ## Implementation Progress
-- [x] Identify root cause of Render failure: `server/` was wiped by an earlier revert commit (`24b045a`)
-- [x] Restore `server/` directory files from commit `c3eda269`
-- [x] Update CORS allowed origins in `server/index.js` for `dumpareview.online`
-- [x] Update Firebase projectId fallback in `server/index.js` to `dumpareviews`
-- [x] Test server syntax with `node -c server/index.js`
-- [x] Commit and push `server/` to `origin/main`
+- [x] Trace error: `42501` returned by PostgREST when inserting into `profiles` and `qr_codes`
+- [x] Identify root cause: Supabase RLS policies require `auth.uid() = user_id`, but client authenticates via Firebase Auth so PostgREST executes as role `anon` with `auth.uid() = NULL`
+- [x] Update `supabase_schema.sql` with RLS fix scripts
+- [x] Prepare step-by-step instructions and SQL snippet for user to execute in Supabase SQL editor

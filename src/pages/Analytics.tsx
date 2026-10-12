@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase/client";
-import { syncUserAccount } from "@/lib/accountSync";
+import { syncUserAccount, getUserAccountIds } from "@/lib/accountSync";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,11 +63,12 @@ export default function Analytics() {
   const fetchData = async () => {
     if (!user) return;
     await syncUserAccount(user);
+    const userIds = await getUserAccountIds(user);
     const [{ data: qrs }, { data: events }] = await Promise.all([
       supabase
         .from("qr_codes")
         .select("id, name, successful_scans, messages, created_at")
-        .eq("user_id", user!.uid)
+        .in("user_id", userIds)
         .order("successful_scans", { ascending: false }),
       supabase
         .from("scan_events")
