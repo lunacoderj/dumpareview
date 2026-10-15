@@ -19,12 +19,14 @@ import Terms from "./pages/Terms";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import CookiePolicy from "./pages/CookiePolicy";
 import NotFound from "./pages/NotFound";
+import { SeoHead } from "@/components/SeoHead";
 
 const queryClient = new QueryClient();
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col min-h-screen">
+      <SeoHead />
       <Navbar />
       <main className="flex-1">
         {children}

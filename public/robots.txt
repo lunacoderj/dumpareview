@@ -5,5 +5,4 @@ Disallow: /analytics
 Disallow: /generate
 Disallow: /qr/
 
-Sitemap: https://dumpareview.online/sitemap.xml
-Host: https://dumpareview.online
+Sitemap: https://www.dumpareview.online/sitemap.xml
