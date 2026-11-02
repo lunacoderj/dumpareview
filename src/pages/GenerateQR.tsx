@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { QrCode, Plus, Trash2, Download, ArrowLeft, CheckCircle } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { QrCode, Plus, Trash2, Download, ArrowLeft, CheckCircle, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import { downloadQRCodeWithBusinessName } from "@/lib/qrDownload";
+import { generate100Reviews } from "@/lib/geminiReviews";
 
 interface GeneratedQR {
   id: string;
@@ -24,10 +26,12 @@ export default function GenerateQR() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [link, setLink] = useState("");
+  const [category, setCategory] = useState("restaurant");
   const [messages, setMessages] = useState<string[]>([""]);
   const [bulkText, setBulkText] = useState("");
   const [inputMode, setInputMode] = useState<InputMode>("bulk");
   const [loading, setLoading] = useState(false);
+  const [generatingAI, setGeneratingAI] = useState(false);
   const [generated, setGenerated] = useState<GeneratedQR | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
 
@@ -60,6 +64,30 @@ export default function GenerateQR() {
     return messages.filter((m) => m.trim());
   };
 
+  const handleGenerateAIReviews = async () => {
+    if (!name.trim()) {
+      toast.error("Please enter your business or QR name first!");
+      return;
+    }
+    setGeneratingAI(true);
+    toast.info("Generating 100 natural, unique 5-star reviews...");
+    try {
+      const generatedList = await generate100Reviews({
+        businessName: name.trim(),
+        category: category,
+      });
+
+      setBulkText(generatedList.join("\n"));
+      setMessages(generatedList);
+      setInputMode("bulk");
+      toast.success("Successfully generated 100 authentic review messages!");
+    } catch {
+      toast.error("Failed to generate reviews. Please try again.");
+    } finally {
+      setGeneratingAI(false);
+    }
+  };
+
   const handleGenerate = async () => {
     if (!name.trim()) { toast.error("Please enter a name for the QR code."); return; }
     if (!link.trim()) { toast.error("Please enter a Google Review link."); return; }
@@ -71,7 +99,7 @@ export default function GenerateQR() {
 
     setLoading(true);
     try {
-      // Ensure profile exists in Supabase so foreign keys don't fail with 409 Conflict
+      // Ensure profile exists in Supabase so foreign keys don't fail
       await supabase.from("profiles").upsert({
         user_id: user.uid,
         full_name: user.displayName || "Unknown",
@@ -85,6 +113,9 @@ export default function GenerateQR() {
           user_id: user.uid,
           name: name.trim(),
           google_review_link: link.trim(),
+          business_category: category,
+          status: "active",
+          auto_refill_prompted: false,
           messages: validMessages,
           message_used_counts: new Array(validMessages.length).fill(0),
           current_message_index: 0,
@@ -97,7 +128,7 @@ export default function GenerateQR() {
 
       const scanUrl = `${window.location.origin}/scan/${data.id}`;
       setGenerated({ id: data.id, name: data.name, scanUrl });
-      toast.success("QR code generated successfully!");
+      toast.success("QR code generated successfully with 100 reviews!");
     } catch {
       toast.error("Failed to generate QR code. Please try again.");
     } finally {
@@ -139,8 +170,10 @@ export default function GenerateQR() {
         </button>
 
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Generate QR Code</h1>
-          <p className="text-muted-foreground">Create a QR code with pre-written review messages for your customers.</p>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Generate Smart QR Code</h1>
+          <p className="text-muted-foreground">
+            Generate 100 natural Google review messages that automatically cycle per scan.
+          </p>
         </div>
 
         {generated ? (
@@ -175,14 +208,70 @@ export default function GenerateQR() {
           <div className="space-y-6">
             <div className="stat-card rounded-2xl space-y-5">
               <div>
-                <Label htmlFor="name" className="text-sm font-medium">QR Code Name</Label>
-                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Cafe Bella Review QR" className="mt-1.5 h-11" />
-                <p className="text-xs text-muted-foreground mt-1">A label to identify this QR code in your dashboard.</p>
+                <Label htmlFor="name" className="text-sm font-medium">Business / QR Code Name</Label>
+                <Input
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Bella Italia Bistro"
+                  className="mt-1.5 h-11"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Used by the AI to customize realistic reviews and printed on your branded QR card.
+                </p>
               </div>
-              <div>
-                <Label htmlFor="link" className="text-sm font-medium">Google Review Link</Label>
-                <Input id="link" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://g.page/r/your-business/review" className="mt-1.5 h-11" />
-                <p className="text-xs text-muted-foreground mt-1">The URL customers will be taken to after copying the message.</p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="category" className="text-sm font-medium">Business Category</Label>
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger id="category" className="mt-1.5 h-11">
+                      <SelectValue placeholder="Select Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="restaurant">Restaurant / Cafe / Food</SelectItem>
+                      <SelectItem value="salon">Salon / Spa / Barber</SelectItem>
+                      <SelectItem value="dental">Dental / Clinic / Medical</SelectItem>
+                      <SelectItem value="auto">Auto Repair / Mechanic</SelectItem>
+                      <SelectItem value="retail">Retail / Boutique / Store</SelectItem>
+                      <SelectItem value="general">General Business / Service</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="link" className="text-sm font-medium">Google Review Link</Label>
+                  <Input
+                    id="link"
+                    value={link}
+                    onChange={(e) => setLink(e.target.value)}
+                    placeholder="https://g.page/r/your-business/review"
+                    className="mt-1.5 h-11"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Direct Google Review URL.</p>
+                </div>
+              </div>
+
+              {/* AI Auto-Generate 100 Reviews Banner */}
+              <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="space-y-1 text-center sm:text-left">
+                  <div className="flex items-center gap-1.5 justify-center sm:justify-start">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-bold text-foreground">AI Review Generator</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Auto-create 100 diverse, natural 5-star Google review messages tailored to your business.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={handleGenerateAIReviews}
+                  disabled={generatingAI}
+                  className="h-10 px-5 hero-gradient text-white font-bold shadow-md hover:scale-[1.02] active:scale-95 transition-all w-full sm:w-auto"
+                >
+                  <Wand2 className="h-4 w-4 mr-2" />
+                  {generatingAI ? "Crafting 100 Reviews..." : "Generate 100 Reviews"}
+                </Button>
               </div>
             </div>
 
@@ -191,8 +280,7 @@ export default function GenerateQR() {
                 <div>
                   <h3 className="font-semibold text-foreground">Review Messages</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {inputMode === "bulk" ? `${bulkCount}` : `${messages.filter((m) => m.trim()).length}`} / 100 messages.
-                    Each scan picks a random unused message.
+                    {inputMode === "bulk" ? `${bulkCount}` : `${messages.filter((m) => m.trim()).length}`} / 100 messages configured.
                   </p>
                 </div>
                 <div className="flex gap-1 bg-secondary rounded-lg p-0.5">
@@ -200,13 +288,13 @@ export default function GenerateQR() {
                     onClick={() => setInputMode("bulk")}
                     className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${inputMode === "bulk" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                   >
-                    Bulk Paste
+                    Bulk Paste / AI List
                   </button>
                   <button
                     onClick={() => setInputMode("individual")}
                     className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${inputMode === "individual" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                   >
-                    Individual
+                    Individual List
                   </button>
                 </div>
               </div>
@@ -216,11 +304,11 @@ export default function GenerateQR() {
                   <Textarea
                     value={bulkText}
                     onChange={(e) => setBulkText(e.target.value)}
-                    placeholder={"Paste all messages here, one per line:\n\nGreat food and service!\nLoved the ambiance, will come back.\nBest coffee in town!"}
-                    className="min-h-[240px] text-sm resize-none"
+                    placeholder={"Paste or generate 100 messages, one per line:\n\nGreat food and service!\nLoved the ambiance, will come back.\nBest coffee in town!"}
+                    className="min-h-[260px] text-sm resize-none font-sans"
                   />
                   <p className="text-xs text-muted-foreground mt-2">
-                    One message per line. Empty lines are ignored.
+                    One message per line. Empty lines are ignored. Total messages: {bulkCount}
                   </p>
                 </div>
               ) : (
@@ -228,7 +316,7 @@ export default function GenerateQR() {
                   <div className="flex justify-end mb-3">
                     <Button variant="outline" size="sm" onClick={addMessage} disabled={messages.length >= 100}>
                       <Plus className="h-4 w-4 mr-1" />
-                      Add
+                      Add Message
                     </Button>
                   </div>
                   <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
@@ -241,7 +329,7 @@ export default function GenerateQR() {
                           value={msg}
                           onChange={(e) => updateMessage(i, e.target.value)}
                           placeholder={`Message ${i + 1}: e.g. "Great service and food!"`}
-                          className="flex-1 min-h-[80px] text-sm resize-none"
+                          className="flex-1 min-h-[70px] text-sm resize-none"
                         />
                         <button
                           onClick={() => removeMessage(i)}
@@ -267,7 +355,7 @@ export default function GenerateQR() {
               ) : (
                 <QrCode className="h-5 w-5 mr-2" />
               )}
-              {loading ? "Generating..." : "Generate QR Code"}
+              {loading ? "Creating QR Code..." : "Create Smart Review QR Code"}
             </Button>
           </div>
         )}

@@ -1,5 +1,95 @@
 # Project Changelog - DumpaReview
 
+## [2026-11-02] - AI 100-Review Generator, Curation Engine, & 24-Hour Verification Agent Implementation
+
+### Changes Made & Updates
+- **AI 100 Natural Review Generator**:
+  - Created `src/lib/geminiReviews.ts` providing automated generation of 100 authentic 5-star Google reviews tailored to business name, category, and keywords via Gemini API with procedural natural language engine fallback.
+  - Integrated into `src/pages/GenerateQR.tsx` with category selection (Restaurants, Salons, Dental, Auto, Retail, General) and one-click generation.
+- **Granular Message Curation**:
+  - Implemented inline message editing, individual message deletion, custom message addition, and manual 100-review regeneration in `src/pages/QRDetail.tsx`.
+- **100-Message Exhaustion & Refill Permission Lifecycle**:
+  - Updated `supabase_schema.sql` `process_scan` RPC to detect when all 100 messages have cycled.
+  - Created `src/components/NotificationBell.tsx` mounted in `src/components/Navbar.tsx` and exhaustion banners in `src/pages/QRDetail.tsx` and `src/pages/Dashboard.tsx` offering instant Accept (generate 100 fresh reviews) or Reject actions.
+- **24-Hour Scheduled Review Verification Agent (Vercel Free Tier Compatible)**:
+  - Adapted schedule to Vercel Hobby tier (1 cron job per day at `0 0 * * *` 00:00 UTC) via `vercel.json` and serverless function `api/cron-audit.ts`.
+  - Implemented strict 24-hour maturation rule in `src/lib/auditAgent.ts` and `server/index.js`: only scans >= 24 hours old are evaluated; scans under 24 hours are deferred to the next cycle.
+  - Compares scan messages against Google review text with text normalization and similarity matching, marking scan events as `verified_success` or `verified_fail`.
+- **Comprehensive 24h Audit Analytics Table**:
+  - Added audit table in `src/pages/Analytics.tsx` with columns: `#`, `Review Message Text`, `Scan Timestamp`, `Maturation Age`, and `24-Hour Agent Audit Result` (Successful / Fail / Awaiting 24h Window).
+  - Added on-demand "Run 24h Audit Now" button for instant testing.
+- **Testing & Build Verification**:
+  - Added unit test suite `src/test/geminiReviews.test.ts` (all tests passing).
+  - Production build verified with `npm run build` (completed cleanly with 0 errors).
+
+### Files Created
+- `src/lib/geminiReviews.ts`
+- `src/lib/auditAgent.ts`
+- `src/components/NotificationBell.tsx`
+- `api/cron-audit.ts`
+- `src/test/geminiReviews.test.ts`
+
+### Files Modified
+- `supabase_schema.sql`
+- `vercel.json`
+- `server/index.js`
+- `src/components/Navbar.tsx`
+- `src/pages/GenerateQR.tsx`
+- `src/pages/QRDetail.tsx`
+- `src/pages/Analytics.tsx`
+- `src/pages/Dashboard.tsx`
+- `PROJECT_MEMORY/PROJECT_STATE.md`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_CHANGELOG.md`
+
+## [2026-11-02] - Implementation Plan: AI Review Generator & 12-Hour Audit Agent
+
+### Changes Made & Updates
+- **Technical Architectural Blueprint**:
+  - Detailed design for automated 100 natural AI review message generation using Gemini API upon business link addition.
+  - Granular message curation UI (inline edit, individual delete, custom add, manual regeneration).
+  - 100-message usage exhaustion trigger and interactive notification lifecycle (Accept / Reject permission prompt).
+  - 12-hour scheduled verification agent (00:00 AM and 12:00 PM cron cycles) enforcing 12h+ maturity filter (e.g. 1:00 AM scan held until midnight).
+  - Scraper matching engine comparing scanned messages with live Google Maps reviews.
+  - Analytics audit table with row #, review message text, scan timestamp, and agent success/fail status badge.
+- **Project Memory & Plan Artifact**:
+  - Authored full implementation plan artifact `dumpareview_execution_plan.md`.
+  - Updated `PROJECT_MEMORY/CURRENT_TASK.md` and `PROJECT_MEMORY/CHANGELOG.md`.
+
+### Files Created
+- `dumpareview_execution_plan.md` (Artifact)
+
+### Files Modified
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_CHANGELOG.md`
+
+## [2026-11-02] - Comprehensive Project Audit & Strategic Enhancement Roadmap
+
+### Changes Made & Updates
+- **Full Architecture & UX Audit**:
+  - Inspected frontend SPA routes, Supabase PostgREST queries and RPC functions, client-side bundle performance (1.23 MB monolithic chunk), and scan redirect flow (`ScanRedirect.tsx`).
+  - Evaluated real-world business adoption hurdles: writing up to 100 messages manually, lack of protection against negative 1-star reviews on Google, single-platform limitation, and missing physical print collateral formats.
+- **Strategic Enhancement Roadmap**:
+  - Mapped 10 high-impact features categorized into:
+    1. Sentiment Shield / Review Gating (intercepts 1-3 star reviews into private owner feedback while directing 4-5 stars to Google).
+    2. AI Review Message Generator & Pre-built Industry Template Library (Gemini API integration).
+    3. Route-Level Lazy Loading / Code-Splitting (<90 KB scan page load).
+    4. Table Tent & Printable Collateral Studio (A4/A5 PDF foldouts, logo watermarking, acrylic counter stands).
+    5. Customer Multi-Choice / Shuffle Message Picker.
+    6. Google Place ID & Review Link Auto-Finder.
+    7. Multi-Platform Review Support (Google, TripAdvisor, Yelp, Facebook, Trustpilot).
+    8. White-Label & Ad-Free Pro Tier.
+    9. Database Security Hardening (Supabase RLS & API protection).
+    10. Scan Rate Limiting & Bot Filtering.
+  - Updated `PROJECT_MEMORY/NEXT_STEPS.md` and `PROJECT_MEMORY/CHANGELOG.md`.
+
+### Files Modified
+- `PROJECT_MEMORY/NEXT_STEPS.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_CHANGELOG.md`
+
 ## [2026-10-15] - Technical SEO & Google Search Console Alignment Overhaul
 
 ### Changes Made & Updates

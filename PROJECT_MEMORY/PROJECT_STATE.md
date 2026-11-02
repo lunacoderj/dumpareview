@@ -27,6 +27,11 @@ Domain migration to `dumpareview.online`, legal compliance (Terms, Privacy, Cook
 - Full legal compliance suite: Terms of Service, Privacy Policy, Cookie Policy, and dynamic Cookie Consent banner
 - Search Engine Optimization (SEO): Canonical tags, comprehensive client keywords, JSON-LD schema, Open Graph, Twitter Cards
 - Site indexing infrastructure: `sitemap.xml` and `robots.txt`
+- **AI 100-Review Generator**: Automatically drafts 100 unique, human-like 5-star Google review messages tailored to business name & category (`src/lib/geminiReviews.ts`).
+- **Granular Message Curation**: Inline edit, individual delete, custom message addition, and 100-review regeneration in `QRDetail.tsx`.
+- **100-Message Exhaustion Lifecycle**: Detects when all 100 messages have cycled, alerts the owner via `NotificationBell` & in-app banner, and asks permission to generate 100 new reviews (with Accept/Reject handling).
+- **24-Hour Review Verification Agent**: Runs daily (00:00 UTC) matching live Google reviews against scan messages. Strictly enforces 24h+ maturation gate (scans under 24h old deferred to next cycle). Fully compliant with Vercel Free tier 1-cron-job limit (`vercel.json`, `api/cron-audit.ts`, `server/index.js`).
+- **24-Hour Audit Analytics Table**: Comprehensive log in `Analytics.tsx` with row #, review message text, scan timestamp, maturation age, and agent result badge (Successful / Fail / Awaiting 24h Window) plus manual trigger button.
 
 ## Known Limitations
 - Firebase Authorized Domain registration must include `dumpareview.online` in Firebase Console or Google Cloud Identity Platform.

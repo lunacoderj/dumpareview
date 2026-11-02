@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase/client";
 import { syncUserAccount, getUserAccountIds } from "@/lib/accountSync";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -12,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { QrCode, Plus, ExternalLink, Trash2, CheckCircle, BarChart3, Star, TrendingUp } from "lucide-react";
+import { QrCode, Plus, ExternalLink, Trash2, CheckCircle, BarChart3, Star, TrendingUp, AlertTriangle, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -23,6 +24,8 @@ interface QRCode {
   messages: string[];
   current_message_index: number;
   successful_scans: number;
+  status?: string;
+  auto_refill_prompted?: boolean;
   created_at: string;
 }
 
@@ -31,14 +34,11 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [qrCodes, setQrCodes] = useState<QRCode[]>([]);
   const [loading, setLoading] = useState(true);
-
   const [dbError, setDbError] = useState<string | null>(null);
 
   const fetchQRCodes = async () => {
     if (!user) return;
-    // Auto-sync profile and adopt QR codes from previous Firebase accounts matching this email
     await syncUserAccount(user);
-
     const userIds = await getUserAccountIds(user);
 
     const { data, error } = await supabase
@@ -75,6 +75,7 @@ export default function Dashboard() {
 
   const totalScans = qrCodes.reduce((sum, q) => sum + q.successful_scans, 0);
   const totalMessages = qrCodes.reduce((sum, q) => sum + q.messages.length, 0);
+  const exhaustedQRs = qrCodes.filter(q => q.status === "exhausted" || q.auto_refill_prompted);
 
   return (
     <div className="min-h-screen bg-background py-8 px-4">
@@ -85,7 +86,7 @@ export default function Dashboard() {
             <h1 className="text-3xl font-bold text-foreground">
               Welcome back, {user?.displayName?.split(" ")[0] ?? "there"}! 👋
             </h1>
-            <p className="text-muted-foreground mt-1">Manage your QR codes and track review performance.</p>
+            <p className="text-muted-foreground mt-1">Manage your QR codes, 100-message rotations, and 24h audits.</p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -94,49 +95,56 @@ export default function Dashboard() {
               className="h-11 px-5 border-primary text-primary hover:bg-primary/10"
             >
               <TrendingUp className="h-4 w-4 mr-2" />
-              View Analytics
+              View 24h Analytics
             </Button>
             <Button
               onClick={() => navigate("/generate")}
-              className="hero-gradient text-white border-0 shadow-primary hover:opacity-90 h-11 px-6"
+              className="h-11 px-5 hero-gradient text-white shadow-primary border-0 hover:opacity-90 font-bold"
             >
               <Plus className="h-4 w-4 mr-2" />
-              New QR Code
+              Create QR Code
             </Button>
           </div>
         </div>
 
-        {/* Stats */}
-        {dbError && (
-          <div className="bg-destructive/10 border border-destructive text-destructive px-6 py-5 rounded-2xl mb-8">
-            <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
-              <span className="text-xl">⚠️</span> Database Schema Error
-            </h3>
-            <p className="mb-4">
-              Your Supabase database has an incorrect column type for <code>user_id</code> (it is currently set to UUID, but must be TEXT to match Firebase UIDs).
-            </p>
-            <p className="font-semibold mb-2">To fix this, you must manually run this SQL in your Supabase Dashboard:</p>
-            <pre className="bg-background/50 p-4 rounded-lg overflow-x-auto text-sm text-foreground mb-4 font-mono">
-{`-- Drop the foreign key constraint first
-ALTER TABLE public.qr_codes DROP CONSTRAINT IF EXISTS qr_codes_user_id_fkey;
-
--- Change the user_id column types to TEXT
-ALTER TABLE public.profiles ALTER COLUMN user_id TYPE TEXT USING user_id::text;
-ALTER TABLE public.qr_codes ALTER COLUMN user_id TYPE TEXT USING user_id::text;
-
--- Re-add the foreign key constraint
-ALTER TABLE public.qr_codes ADD CONSTRAINT qr_codes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(user_id) ON DELETE CASCADE;`}
-            </pre>
-            <p>I cannot run this for you because I do not have your database password. Please do this manually and refresh the page!</p>
+        {/* Exhaustion Banner if any QR code finished 100 messages */}
+        {exhaustedQRs.length > 0 && (
+          <div className="mb-8 p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-amber-500/20 text-amber-500 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="h-4 w-4" />
+              </div>
+              <p className="text-xs sm:text-sm font-semibold text-foreground">
+                <strong>{exhaustedQRs.length} QR Code(s)</strong> have completed cycling through all 100 review messages!
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => navigate(`/qr/${exhaustedQRs[0].id}`)}
+              className="hero-gradient text-white text-xs font-bold"
+            >
+              <Sparkles className="h-3 w-3 mr-1" />
+              Review & Refill 100
+            </Button>
           </div>
         )}
+
+        {/* Schema Error Alert if present */}
+        {dbError && (
+          <div className="bg-red-500/10 border-2 border-red-500/40 text-red-500 p-6 rounded-2xl mb-8 space-y-4">
+            <h3 className="font-bold text-lg">Action Required in Supabase Dashboard</h3>
+            <p className="text-sm font-mono">{dbError}</p>
+          </div>
+        )}
+
+        {/* Top KPIs */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <div className="stat-card rounded-2xl">
             <div className="flex items-center gap-3 mb-3">
               <div className="h-10 w-10 hero-gradient rounded-xl flex items-center justify-center">
                 <QrCode className="h-5 w-5 text-white" />
               </div>
-              <span className="text-sm font-medium text-muted-foreground">QR Codes</span>
+              <span className="text-sm font-medium text-muted-foreground">Active QR Codes</span>
             </div>
             <p className="text-3xl font-bold text-foreground">{qrCodes.length}</p>
           </div>
@@ -145,7 +153,7 @@ ALTER TABLE public.qr_codes ADD CONSTRAINT qr_codes_user_id_fkey FOREIGN KEY (us
               <div className="h-10 w-10 teal-gradient rounded-xl flex items-center justify-center">
                 <CheckCircle className="h-5 w-5 text-white" />
               </div>
-              <span className="text-sm font-medium text-muted-foreground">Successful Scans</span>
+              <span className="text-sm font-medium text-muted-foreground">Total Scans</span>
             </div>
             <p className="text-3xl font-bold text-foreground">{totalScans}</p>
           </div>
@@ -161,11 +169,11 @@ ALTER TABLE public.qr_codes ADD CONSTRAINT qr_codes_user_id_fkey FOREIGN KEY (us
         </div>
 
         {/* Table */}
-        <div className="bg-white rounded-2xl border border-border overflow-hidden shadow-sm">
+        <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
           <div className="p-6 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-3">
               <BarChart3 className="h-5 w-5 text-primary" />
-              <h2 className="font-semibold text-foreground text-lg">QR Code History</h2>
+              <h2 className="font-semibold text-foreground text-lg">QR Codes & Curation</h2>
             </div>
             {qrCodes.length > 0 && (
               <span className="text-sm text-muted-foreground">{qrCodes.length} total</span>
@@ -178,29 +186,26 @@ ALTER TABLE public.qr_codes ADD CONSTRAINT qr_codes_user_id_fkey FOREIGN KEY (us
               <p className="text-muted-foreground text-sm">Loading your QR codes...</p>
             </div>
           ) : qrCodes.length === 0 ? (
-            <div className="p-16 text-center">
-              <div className="h-16 w-16 hero-gradient rounded-3xl flex items-center justify-center mx-auto mb-6">
+            <div className="p-12 text-center">
+              <div className="h-16 w-16 hero-gradient rounded-2xl flex items-center justify-center mx-auto mb-4 opacity-50">
                 <QrCode className="h-8 w-8 text-white" />
               </div>
-              <h3 className="text-lg font-semibold text-foreground mb-2">No QR codes yet</h3>
-              <p className="text-muted-foreground text-sm mb-6 max-w-xs mx-auto">
-                Create your first QR code to start collecting Google reviews from your customers.
+              <h3 className="font-semibold text-foreground text-lg mb-1">No QR codes yet</h3>
+              <p className="text-muted-foreground text-sm mb-6 max-w-sm mx-auto">
+                Create your first smart QR code to auto-generate 100 natural Google reviews.
               </p>
-              <Button
-                onClick={() => navigate("/generate")}
-                className="hero-gradient text-white border-0 shadow-primary hover:opacity-90"
-              >
+              <Button onClick={() => navigate("/generate")} className="hero-gradient text-white border-0 shadow-primary hover:opacity-90">
                 <Plus className="h-4 w-4 mr-2" />
-                Create Your First QR Code
+                Generate My First QR Code
               </Button>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-secondary/50">
+                  <TableRow className="bg-muted/40">
                     <TableHead className="w-12 font-semibold">Sl.</TableHead>
-                    <TableHead className="font-semibold">QR Name</TableHead>
+                    <TableHead className="font-semibold">QR Name & Status</TableHead>
                     <TableHead className="font-semibold">Google Review Link</TableHead>
                     <TableHead className="font-semibold text-center">Messages</TableHead>
                     <TableHead className="font-semibold text-center">Scans</TableHead>
@@ -210,14 +215,21 @@ ALTER TABLE public.qr_codes ADD CONSTRAINT qr_codes_user_id_fkey FOREIGN KEY (us
                 </TableHeader>
                 <TableBody>
                   {qrCodes.map((qr, index) => (
-                    <TableRow key={qr.id} className="hover:bg-secondary/30 transition-colors">
+                    <TableRow key={qr.id} className="hover:bg-muted/30 transition-colors">
                       <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className="h-8 w-8 hero-gradient rounded-lg flex items-center justify-center flex-shrink-0">
                             <QrCode className="h-4 w-4 text-white" />
                           </div>
-                          <span className="font-medium text-foreground">{qr.name}</span>
+                          <div>
+                            <span className="font-semibold text-foreground block">{qr.name}</span>
+                            {(qr.status === "exhausted" || qr.auto_refill_prompted) && (
+                              <span className="inline-block text-[10px] bg-amber-100 text-amber-700 px-2 py-0.2 rounded-full font-bold">
+                                100 Messages Cycled
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -232,12 +244,12 @@ ALTER TABLE public.qr_codes ADD CONSTRAINT qr_codes_user_id_fkey FOREIGN KEY (us
                         </a>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="inline-flex items-center justify-center h-7 min-w-7 px-2 rounded-full bg-accent text-accent-foreground text-xs font-semibold">
+                        <span className="inline-flex items-center justify-center h-7 min-w-7 px-2 rounded-full bg-secondary text-foreground text-xs font-semibold">
                           {qr.messages.length}
                         </span>
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="inline-flex items-center gap-1 text-success-foreground font-semibold">
+                        <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold">
                           <CheckCircle className="h-4 w-4" />
                           {qr.successful_scans}
                         </span>
@@ -263,10 +275,10 @@ ALTER TABLE public.qr_codes ADD CONSTRAINT qr_codes_user_id_fkey FOREIGN KEY (us
                             size="sm"
                             variant="ghost"
                             onClick={() => navigate(`/qr/${qr.id}`)}
-                            className="text-xs text-primary"
+                            className="text-xs text-primary font-bold"
                           >
                             <BarChart3 className="h-3.5 w-3.5 mr-1" />
-                            Analysis
+                            Manage & Audit
                           </Button>
                           <button
                             onClick={() => handleDelete(qr.id)}

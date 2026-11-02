@@ -9,9 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { QrCode, LayoutDashboard, LogOut, User, Menu, X } from "lucide-react";
+import { QrCode, LayoutDashboard, LogOut, Menu, X, TrendingUp } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export default function Navbar() {
   const { user, signOut } = useAuth();
@@ -23,6 +24,7 @@ export default function Navbar() {
     ? [
         { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
         { to: "/generate", label: "Generate QR", icon: QrCode },
+        { to: "/analytics", label: "Analytics", icon: TrendingUp },
       ]
     : [];
 
@@ -59,8 +61,10 @@ export default function Navbar() {
             ))}
           </div>
 
-          {/* Auth section */}
-          <div className="flex items-center gap-3">
+          {/* Auth section & Notifications */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {user && <NotificationBell />}
+
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -89,6 +93,10 @@ export default function Navbar() {
                   <DropdownMenuItem onClick={() => navigate("/generate")}>
                     <QrCode className="h-4 w-4 mr-2" />
                     Generate QR
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate("/analytics")}>
+                    <TrendingUp className="h-4 w-4 mr-2" />
+                    Analytics
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
