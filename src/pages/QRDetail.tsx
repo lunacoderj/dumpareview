@@ -13,15 +13,16 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  ArrowLeft, Download, QrCode, CheckCircle, MessageSquare,
+  ArrowLeft, Download, CheckCircle, MessageSquare,
   ChevronDown, ChevronUp, ExternalLink, BarChart3, Copy, Pencil, Check, X,
-  Trash2, Plus, Sparkles, AlertTriangle, ShieldCheck, Clock
+  Trash2, Plus, Sparkles, AlertTriangle, ShieldCheck, Clock, ShieldAlert, RotateCcw, Zap
 } from "lucide-react";
 import { toast } from "sonner";
 import { format, differenceInHours } from "date-fns";
 import { downloadQRCodeWithBusinessName } from "@/lib/qrDownload";
 import { QRCodeSVG } from "qrcode.react";
 import { generate100Reviews } from "@/lib/geminiReviews";
+import { markBusinessForAudit, markScanForAudit, markScanForReReview } from "@/lib/auditAgent";
 
 interface QRCodeData {
   id: string;
@@ -41,6 +42,8 @@ interface ScanEvent {
   message_used: string | null;
   message_index: number | null;
   verification_status?: string;
+  marked_for_audit?: boolean;
+  audit_count?: number;
   verified_at?: string;
   scanned_at: string;
 }
@@ -58,6 +61,8 @@ export default function QRDetail() {
   const [error, setError] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState("");
+  const [markingBusiness, setMarkingBusiness] = useState(false);
+  const [rowActionId, setRowActionId] = useState<string | null>(null);
 
   // Edit Single Message State
   const [editingMsgIndex, setEditingMsgIndex] = useState<number | null>(null);
@@ -120,7 +125,54 @@ export default function QRDetail() {
     setEditingName(false);
   };
 
-  // 1. Edit a specific message
+  // Mark all scans of this business for audit
+  const handleMarkBusinessForAudit = async () => {
+    if (!qr) return;
+    setMarkingBusiness(true);
+    try {
+      const count = await markBusinessForAudit(qr.id);
+      toast.success(`Marked ${count} pending/failed scans for audit! Bypassing 24-hour wait.`);
+      await fetchData();
+    } catch {
+      toast.error("Failed to mark business for audit.");
+    } finally {
+      setMarkingBusiness(false);
+    }
+  };
+
+  // Row action: Fast track
+  const handleFastTrackScan = async (scanId: string) => {
+    setRowActionId(scanId);
+    const success = await markScanForAudit(scanId);
+    if (success) {
+      toast.success("Fast-tracked for audit! The 24-hour wait is bypassed.");
+      setEvents((prev) =>
+        prev.map((e) => (e.id === scanId ? { ...e, marked_for_audit: true } : e))
+      );
+    } else {
+      toast.error("Failed to mark scan for audit.");
+    }
+    setRowActionId(null);
+  };
+
+  // Row action: Re-review failed
+  const handleReReviewScan = async (scanId: string) => {
+    setRowActionId(scanId);
+    const success = await markScanForReReview(scanId);
+    if (success) {
+      toast.success("Marked for re-review! The agent will re-audit Google Maps.");
+      setEvents((prev) =>
+        prev.map((e) =>
+          e.id === scanId ? { ...e, verification_status: "pending", marked_for_audit: true } : e
+        )
+      );
+    } else {
+      toast.error("Failed to mark for re-review.");
+    }
+    setRowActionId(null);
+  };
+
+  // Edit message
   const handleOpenEdit = (index: number, currentText: string) => {
     setEditingMsgIndex(index);
     setEditingMsgText(currentText);
@@ -145,7 +197,7 @@ export default function QRDetail() {
     }
   };
 
-  // 2. Delete a specific message
+  // Delete message
   const handleDeleteMessage = async (indexToDelete: number) => {
     if (!qr) return;
     if (qr.messages.length <= 1) {
@@ -174,7 +226,7 @@ export default function QRDetail() {
     }
   };
 
-  // 3. Add an individual custom message
+  // Add message
   const handleAddMessage = async () => {
     if (!qr || !newMsgText.trim()) return;
     const updatedMessages = [...qr.messages, newMsgText.trim()];
@@ -199,7 +251,7 @@ export default function QRDetail() {
     }
   };
 
-  // 4. Trigger / Re-trigger 100 New AI Reviews
+  // Trigger 100 Fresh Reviews
   const handleGenerate100FreshReviews = async () => {
     if (!qr) return;
     setIsGenerating100(true);
@@ -370,14 +422,27 @@ export default function QRDetail() {
               Created {format(new Date(qr.created_at), "MMMM d, yyyy")} · Category: {qr.business_category || "General"}
             </p>
           </div>
-          <a
-            href={qr.google_review_link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-primary hover:underline text-sm font-medium"
-          >
-            <ExternalLink className="h-4 w-4" /> Google Review Link
-          </a>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={markingBusiness}
+              onClick={handleMarkBusinessForAudit}
+              className="h-9 text-xs font-bold border-primary text-primary hover:bg-primary/10"
+            >
+              <ShieldAlert className="h-4 w-4 mr-1.5" />
+              {markingBusiness ? "Marking..." : "Mark Business for Audit"}
+            </Button>
+            <a
+              href={qr.google_review_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-primary hover:underline text-sm font-medium px-2 py-1"
+            >
+              <ExternalLink className="h-4 w-4" /> Google Review Link
+            </a>
+          </div>
         </div>
 
         {/* Top section: QR + Stats */}
@@ -540,12 +605,12 @@ export default function QRDetail() {
           )}
         </div>
 
-        {/* Recent Scan Events with 24-Hour Agent Audit */}
+        {/* Recent Scan Events with 24-Hour Agent Audit & Row-Level Actions */}
         <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
           <div className="p-5 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5 text-primary" />
-              <h2 className="font-bold text-foreground text-lg">Customer Scan Log & 24h Audit</h2>
+              <h2 className="font-bold text-foreground text-lg">Customer Scan Log & Agent Audit</h2>
             </div>
             <span className="text-xs text-muted-foreground">{events.length} scans recorded</span>
           </div>
@@ -561,14 +626,18 @@ export default function QRDetail() {
                   <TableRow className="bg-muted/40">
                     <TableHead className="w-12 font-semibold">#</TableHead>
                     <TableHead className="font-semibold">Suggested Review Message</TableHead>
-                    <TableHead className="font-semibold w-44">Scanned At</TableHead>
-                    <TableHead className="font-semibold text-center w-48">24-Hour Agent Audit</TableHead>
+                    <TableHead className="font-semibold w-36">Scanned At</TableHead>
+                    <TableHead className="font-semibold text-center w-40">Agent Audit Status</TableHead>
+                    <TableHead className="font-semibold text-right w-40">Audit Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {events.map((ev, idx) => {
                     const hoursAgo = differenceInHours(new Date(), new Date(ev.scanned_at));
                     const isMatured = hoursAgo >= 24;
+                    const isSuccess = ev.verification_status === "verified_success";
+                    const isFail = ev.verification_status === "verified_fail";
+                    const isQueued = ev.marked_for_audit;
 
                     return (
                       <TableRow key={ev.id} className="hover:bg-muted/30 transition-colors">
@@ -577,25 +646,62 @@ export default function QRDetail() {
                           {ev.message_used ?? "—"}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {format(new Date(ev.scanned_at), "MMM d, yyyy h:mm a")}
+                          {format(new Date(ev.scanned_at), "MMM d, h:mm a")}
                         </TableCell>
                         <TableCell className="text-center">
-                          {ev.verification_status === "verified_success" ? (
+                          {isSuccess ? (
                             <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-[11px] px-2.5 py-0.5">
-                              <ShieldCheck className="h-3 w-3 mr-1" /> Verified on Google
+                              <ShieldCheck className="h-3 w-3 mr-1" /> Verified
                             </Badge>
-                          ) : ev.verification_status === "verified_fail" ? (
+                          ) : isFail ? (
                             <Badge variant="destructive" className="font-bold text-[11px] px-2.5 py-0.5">
                               <X className="h-3 w-3 mr-1" /> Not Found
                             </Badge>
+                          ) : isQueued ? (
+                            <Badge className="bg-blue-600 text-white font-semibold text-[11px] px-2.5 py-0.5">
+                              <Clock className="h-3 w-3 mr-1" /> Queued for Audit
+                            </Badge>
                           ) : isMatured ? (
-                            <Badge variant="secondary" className="font-bold text-[11px] px-2.5 py-0.5 text-amber-600 bg-amber-50">
-                              <Clock className="h-3 w-3 mr-1" /> Eligible (Next Cycle)
+                            <Badge variant="secondary" className="font-bold text-[11px] px-2.5 py-0.5 text-blue-700 bg-blue-50">
+                              <Clock className="h-3 w-3 mr-1" /> Ready (24h+)
                             </Badge>
                           ) : (
                             <Badge variant="outline" className="font-medium text-[10px] px-2 py-0.5 text-muted-foreground">
                               <Clock className="h-3 w-3 mr-1" /> Maturing ({hoursAgo}/24h)
                             </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {isSuccess ? (
+                            <span className="text-[11px] text-emerald-600 font-semibold inline-flex items-center gap-1">
+                              <Check className="h-3 w-3" /> Verified (Skipped)
+                            </span>
+                          ) : isFail ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={rowActionId === ev.id}
+                              onClick={() => handleReReviewScan(ev.id)}
+                              className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 font-bold"
+                            >
+                              <RotateCcw className="h-3 w-3 mr-1" />
+                              {rowActionId === ev.id ? "Queuing..." : "Re-Review"}
+                            </Button>
+                          ) : isQueued ? (
+                            <span className="text-[11px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                              Queued
+                            </span>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={rowActionId === ev.id}
+                              onClick={() => handleFastTrackScan(ev.id)}
+                              className="h-7 text-xs font-semibold text-primary hover:bg-primary/5"
+                            >
+                              <Zap className="h-3 w-3 mr-1 text-amber-500 fill-amber-500" />
+                              {rowActionId === ev.id ? "Fast-tracking..." : "Fast-Track"}
+                            </Button>
                           )}
                         </TableCell>
                       </TableRow>

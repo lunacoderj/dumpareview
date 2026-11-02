@@ -13,9 +13,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { QrCode, Plus, ExternalLink, Trash2, CheckCircle, BarChart3, Star, TrendingUp, AlertTriangle, Sparkles } from "lucide-react";
+import {
+  QrCode,
+  Plus,
+  ExternalLink,
+  Trash2,
+  CheckCircle,
+  BarChart3,
+  Star,
+  TrendingUp,
+  AlertTriangle,
+  Sparkles,
+  ShieldAlert,
+} from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { markBusinessForAudit } from "@/lib/auditAgent";
 
 interface QRCode {
   id: string;
@@ -35,6 +48,7 @@ export default function Dashboard() {
   const [qrCodes, setQrCodes] = useState<QRCode[]>([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
+  const [markingId, setMarkingId] = useState<string | null>(null);
 
   const fetchQRCodes = async () => {
     if (!user) return;
@@ -73,6 +87,18 @@ export default function Dashboard() {
     }
   };
 
+  const handleMarkForReview = async (qrId: string, name: string) => {
+    setMarkingId(qrId);
+    try {
+      const count = await markBusinessForAudit(qrId);
+      toast.success(`Marked ${count} pending scans for ${name}! Bypassing 24-hour wait.`);
+    } catch {
+      toast.error("Failed to mark business for review.");
+    } finally {
+      setMarkingId(null);
+    }
+  };
+
   const totalScans = qrCodes.reduce((sum, q) => sum + q.successful_scans, 0);
   const totalMessages = qrCodes.reduce((sum, q) => sum + q.messages.length, 0);
   const exhaustedQRs = qrCodes.filter(q => q.status === "exhausted" || q.auto_refill_prompted);
@@ -86,7 +112,7 @@ export default function Dashboard() {
             <h1 className="text-3xl font-bold text-foreground">
               Welcome back, {user?.displayName?.split(" ")[0] ?? "there"}! 👋
             </h1>
-            <p className="text-muted-foreground mt-1">Manage your QR codes, 100-message rotations, and 24h audits.</p>
+            <p className="text-muted-foreground mt-1">Manage your QR codes, 100-message rotations, and on-demand audits.</p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -95,7 +121,7 @@ export default function Dashboard() {
               className="h-11 px-5 border-primary text-primary hover:bg-primary/10"
             >
               <TrendingUp className="h-4 w-4 mr-2" />
-              View 24h Analytics
+              View Analytics
             </Button>
             <Button
               onClick={() => navigate("/generate")}
@@ -173,7 +199,7 @@ export default function Dashboard() {
           <div className="p-6 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-3">
               <BarChart3 className="h-5 w-5 text-primary" />
-              <h2 className="font-semibold text-foreground text-lg">QR Codes & Curation</h2>
+              <h2 className="font-semibold text-foreground text-lg">QR Codes & Locations</h2>
             </div>
             {qrCodes.length > 0 && (
               <span className="text-sm text-muted-foreground">{qrCodes.length} total</span>
@@ -258,7 +284,18 @@ export default function Dashboard() {
                         {format(new Date(qr.created_at), "MMM d, yyyy")}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={markingId === qr.id}
+                            onClick={() => handleMarkForReview(qr.id, qr.name)}
+                            className="h-8 text-xs font-semibold text-primary border-primary/30 hover:bg-primary/5"
+                            title="Bypass 24h wait and queue all scans for audit"
+                          >
+                            <ShieldAlert className="h-3.5 w-3.5 mr-1" />
+                            {markingId === qr.id ? "Marking..." : "Mark Review"}
+                          </Button>
                           <Button
                             size="sm"
                             variant="ghost"
@@ -267,7 +304,7 @@ export default function Dashboard() {
                               navigator.clipboard.writeText(url);
                               toast.success("Scan URL copied!");
                             }}
-                            className="text-xs"
+                            className="text-xs h-8"
                           >
                             Copy URL
                           </Button>
@@ -275,10 +312,10 @@ export default function Dashboard() {
                             size="sm"
                             variant="ghost"
                             onClick={() => navigate(`/qr/${qr.id}`)}
-                            className="text-xs text-primary font-bold"
+                            className="text-xs text-primary font-bold h-8"
                           >
                             <BarChart3 className="h-3.5 w-3.5 mr-1" />
-                            Manage & Audit
+                            Manage
                           </Button>
                           <button
                             onClick={() => handleDelete(qr.id)}

@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
 
--- QR Codes Table (with 100-message refill lifecycle tracking)
+-- QR Codes Table (with 100-message refill lifecycle tracking & audit markers)
 CREATE TABLE IF NOT EXISTS public.qr_codes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL REFERENCES public.profiles(user_id) ON DELETE CASCADE,
@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS public.qr_codes (
   status TEXT DEFAULT 'active' NOT NULL, -- 'active' | 'exhausted' | 'pending_refill'
   auto_refill_prompted BOOLEAN DEFAULT false NOT NULL,
   last_generated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+  last_audit_requested_at TIMESTAMP WITH TIME ZONE,
   messages TEXT[] DEFAULT '{}' NOT NULL,
   current_message_index INTEGER DEFAULT 0 NOT NULL,
   successful_scans INTEGER DEFAULT 0 NOT NULL,
@@ -37,14 +38,18 @@ ALTER TABLE public.qr_codes ADD COLUMN IF NOT EXISTS business_category TEXT;
 ALTER TABLE public.qr_codes ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
 ALTER TABLE public.qr_codes ADD COLUMN IF NOT EXISTS auto_refill_prompted BOOLEAN DEFAULT false;
 ALTER TABLE public.qr_codes ADD COLUMN IF NOT EXISTS last_generated_at TIMESTAMP WITH TIME ZONE DEFAULT now();
+ALTER TABLE public.qr_codes ADD COLUMN IF NOT EXISTS last_audit_requested_at TIMESTAMP WITH TIME ZONE;
 
--- Scan Events Table (with 24-Hour Agent Audit fields)
+-- Scan Events Table (with 24-Hour Agent Audit fields & Mark-for-Review controls)
 CREATE TABLE IF NOT EXISTS public.scan_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   qr_code_id UUID NOT NULL REFERENCES public.qr_codes(id) ON DELETE CASCADE,
   message_used TEXT,
   message_index INTEGER,
   verification_status TEXT DEFAULT 'pending' NOT NULL, -- 'pending' | 'verified_success' | 'verified_fail'
+  marked_for_audit BOOLEAN DEFAULT false NOT NULL,
+  audit_requested_at TIMESTAMP WITH TIME ZONE,
+  audit_count INTEGER DEFAULT 0 NOT NULL,
   verified_at TIMESTAMP WITH TIME ZONE,
   verification_batch_id TEXT,
   matched_google_review_id TEXT,
@@ -54,6 +59,9 @@ CREATE TABLE IF NOT EXISTS public.scan_events (
 
 -- Safe migrations for existing scan_events tables:
 ALTER TABLE public.scan_events ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'pending';
+ALTER TABLE public.scan_events ADD COLUMN IF NOT EXISTS marked_for_audit BOOLEAN DEFAULT false;
+ALTER TABLE public.scan_events ADD COLUMN IF NOT EXISTS audit_requested_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.scan_events ADD COLUMN IF NOT EXISTS audit_count INTEGER DEFAULT 0;
 ALTER TABLE public.scan_events ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.scan_events ADD COLUMN IF NOT EXISTS verification_batch_id TEXT;
 ALTER TABLE public.scan_events ADD COLUMN IF NOT EXISTS matched_google_review_id TEXT;
@@ -74,7 +82,7 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 );
 
 -- Indices for performance
-CREATE INDEX IF NOT EXISTS idx_scan_events_maturity ON public.scan_events (scanned_at, verification_status);
+CREATE INDEX IF NOT EXISTS idx_scan_events_audit_ready ON public.scan_events (verification_status, marked_for_audit, scanned_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications (user_id, is_read);
 
 -- 2. Create Functions
@@ -155,8 +163,8 @@ SECURITY DEFINER
 AS $$
 BEGIN
   -- Insert scan event with pending verification status
-  INSERT INTO scan_events (qr_code_id, message_used, message_index, verification_status)
-  VALUES (qr_id, p_message_used, p_message_index, 'pending');
+  INSERT INTO scan_events (qr_code_id, message_used, message_index, verification_status, marked_for_audit)
+  VALUES (qr_id, p_message_used, p_message_index, 'pending', false);
   
   -- Update specific message usage counts
   UPDATE qr_codes

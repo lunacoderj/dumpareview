@@ -1,8 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Vercel Serverless Function Cron Handler (Runs once every 24 hours)
+// Vercel Serverless Function Cron Handler (Runs daily at 00:00 UTC)
 export default async function handler(req: any, res: any) {
-  // Allow Vercel Cron or GET requests with CRON_SECRET or dev testing
   if (req.method !== "GET" && req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -23,23 +22,30 @@ export default async function handler(req: any, res: any) {
     const batchId = `BATCH-${new Date().toISOString().slice(0, 10)}`;
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-    console.log(`[24h Cron Audit] Running at ${new Date().toISOString()} for scans older than ${twentyFourHoursAgo}...`);
+    console.log(`[Daily Cron Audit] Running at ${new Date().toISOString()}...`);
 
-    // Fetch pending scan events strictly older than 24 hours
-    const { data: eligibleScans, error: fetchErr } = await supabase
+    // Fetch all pending scans (strictly excludes already-verified reviews)
+    const { data: pendingScans, error: fetchErr } = await supabase
       .from("scan_events")
-      .select("id, qr_code_id, message_used, scanned_at, qr_codes(id, name, user_id, google_review_link)")
+      .select("id, qr_code_id, message_used, scanned_at, marked_for_audit, audit_count, qr_codes(id, name, user_id, google_review_link)")
       .eq("verification_status", "pending")
-      .lte("scanned_at", twentyFourHoursAgo)
-      .limit(100);
+      .order("scanned_at", { ascending: true })
+      .limit(200);
 
     if (fetchErr) throw fetchErr;
 
-    if (!eligibleScans || eligibleScans.length === 0) {
-      console.log("[24h Cron Audit] No eligible scans >= 24 hours old found. Next check in 24 hours.");
+    // Dual-Condition Eligibility Filter:
+    // Either manually marked by owner (marked_for_audit = true) OR aged >= 24 hours
+    const eligibleScans = (pendingScans || []).filter((s: { marked_for_audit?: boolean; scanned_at: string }) => {
+      if (s.marked_for_audit) return true;
+      return new Date(s.scanned_at) <= new Date(twentyFourHoursAgo);
+    });
+
+    if (eligibleScans.length === 0) {
+      console.log("[Daily Cron Audit] No eligible scans. Scans under 24 hours not marked for audit deferred to next cycle.");
       return res.status(200).json({
         success: true,
-        message: "No eligible scans >= 24 hours old. Scans under 24 hours deferred to next cycle.",
+        message: "No eligible scans ready. Scans under 24 hours deferred to next cycle.",
         auditedCount: 0,
       });
     }
@@ -47,11 +53,11 @@ export default async function handler(req: any, res: any) {
     let successCount = 0;
     let failCount = 0;
 
-    // Optional query to scraped Google reviews if present
+    // Query scraped Google reviews
     const { data: scraped } = await supabase
       .from("apify_scraped_reviews")
       .select("review_text, reviewer_name")
-      .limit(200);
+      .limit(300);
 
     for (const scan of eligibleScans) {
       const msg = (scan.message_used || "").toLowerCase().replace(/[^\w\s]/g, "").trim();
@@ -71,13 +77,17 @@ export default async function handler(req: any, res: any) {
       if (status === "verified_success") successCount++;
       else failCount++;
 
+      const currentAuditCount = (scan.audit_count || 0) + 1;
+
       await supabase
         .from("scan_events")
         .update({
           verification_status: status,
+          marked_for_audit: false,
+          audit_count: currentAuditCount,
           verified_at: new Date().toISOString(),
           verification_batch_id: batchId,
-          agent_notes: matchFound ? "Verified on Google Maps by 24hr Agent" : "Not found in 24hr audit cycle",
+          agent_notes: matchFound ? "Verified on Google Maps by Daily Agent" : "Not found in daily audit cycle",
         })
         .eq("id", scan.id);
     }
@@ -91,8 +101,7 @@ export default async function handler(req: any, res: any) {
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-    console.error("[24h Cron Audit Error]:", error);
+    console.error("[Daily Cron Audit Error]:", error);
     return res.status(500).json({ error: error.message || "Audit execution failed" });
   }
 }
-

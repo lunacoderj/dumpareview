@@ -1808,15 +1808,21 @@ async function run24HourReviewAudit() {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const batchId = 'BATCH-' + new Date().toISOString().slice(0, 10);
 
-    const { data: eligibleScans, error: scanErr } = await supabase
+    const { data: pendingScans, error: scanErr } = await supabase
       .from('scan_events')
-      .select('id, qr_code_id, message_used, scanned_at, qr_codes(id, name, user_id, google_review_link)')
-      .eq('verification_status', 'pending')
-      .lte('scanned_at', twentyFourHoursAgo);
+      .select('id, qr_code_id, message_used, scanned_at, marked_for_audit, audit_count, qr_codes(id, name, user_id, google_review_link)')
+      .eq('verification_status', 'pending');
 
     if (scanErr) throw scanErr;
-    if (!eligibleScans || eligibleScans.length === 0) {
-      console.log('[24H AUDIT AGENT] No pending scans >= 24 hours old. Pending scans under 24 hours deferred to next 24h run.');
+    
+    // Dual-condition: marked_for_audit === true OR aged >= 24 hours
+    const eligibleScans = (pendingScans || []).filter(s => {
+      if (s.marked_for_audit) return true;
+      return new Date(s.scanned_at) <= new Date(twentyFourHoursAgo);
+    });
+
+    if (eligibleScans.length === 0) {
+      console.log('[24H AUDIT AGENT] No pending scans ready for audit. Recent scans under 24 hours not marked are deferred.');
       return { success: true, count: 0 };
     }
 
@@ -1848,10 +1854,14 @@ async function run24HourReviewAudit() {
       if (status === 'verified_success') successCount++;
       else failCount++;
 
+      const currentAuditCount = (scan.audit_count || 0) + 1;
+
       await supabase
         .from('scan_events')
         .update({
           verification_status: status,
+          marked_for_audit: false,
+          audit_count: currentAuditCount,
           verified_at: new Date().toISOString(),
           verification_batch_id: batchId,
           agent_notes: matchFound ? 'Verified on Google Maps by 24hr Agent' : 'Not found in 24hr audit cycle',

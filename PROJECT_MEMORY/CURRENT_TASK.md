@@ -1,41 +1,29 @@
 ## Current Objective
-Implement AI 100-Review Generation Lifecycle, 24-Hour Scheduled Verification Agent (Vercel free tier compatible, 00:00 UTC daily), and Advanced Verification Analytics Table.
+Architect, implement, and verify 'Mark for Review' on-demand audit trigger, 24-hour maturation bypass, deduplication (skip already-verified reviews), and row-level re-review controls.
 
 ## Current Status
-Completed - Successfully implemented and tested end-to-end:
-1. `src/lib/geminiReviews.ts` (AI 100 natural review generator with procedural fallbacks).
-2. Message curation in `src/pages/QRDetail.tsx` (edit, delete, add, and regenerate).
-3. 100-message usage exhaustion tracking and notification permission lifecycle with `NotificationBell.tsx`.
-4. 24-hour verification agent in `src/lib/auditAgent.ts`, `api/cron-audit.ts` (Vercel Cron daily at 00:00), and `server/index.js` (Render backend).
-5. Comprehensive audit analytics table in `src/pages/Analytics.tsx` with on-demand manual audit trigger.
-6. Verified with `vitest` unit tests and clean Vite production build.
+Completed & Verified - All phases implemented, tested with 100% test pass (Vitest: 3 test suites, 7 tests), 0 ESLint errors, and clean Vite production build.
 
-## Files Created
-- `src/lib/geminiReviews.ts`
-- `src/lib/auditAgent.ts`
-- `src/components/NotificationBell.tsx`
-- `api/cron-audit.ts`
-- `src/test/geminiReviews.test.ts`
-
-## Files Modified
-- `supabase_schema.sql`
-- `vercel.json`
-- `server/index.js`
-- `src/components/Navbar.tsx`
-- `src/pages/GenerateQR.tsx`
-- `src/pages/QRDetail.tsx`
-- `src/pages/Analytics.tsx`
-- `src/pages/Dashboard.tsx`
-- `PROJECT_MEMORY/PROJECT_STATE.md`
+## Files Modified / Created
+- `dumpareview_mark_for_review_plan.md` (Artifact)
+- `supabase_schema.sql` (Added columns and index for on-demand audit)
+- `src/lib/auditAgent.ts` (Dual-condition eligibility, mark functions, deduplication)
+- `api/cron-audit.ts` (Vercel daily cron with dual-condition audit & strict deduplication)
+- `server/index.js` (Express cron & manual trigger endpoint)
+- `src/pages/Dashboard.tsx` ("Mark Review" button per QR card)
+- `src/pages/QRDetail.tsx` ("Mark Business for Audit" + row actions in customer scan log)
+- `src/pages/Analytics.tsx` (Row-level Fast-Track & Re-Review buttons, business filter dropdown)
+- `src/test/auditAgent.test.ts` (Unit tests for text normalization & fuzzy similarity matching)
+- `src/components/SeoHead.tsx` (ESLint fix for const ogUrl)
+- `src/lib/geminiReviews.ts` (ESLint fix for const loop variables)
 - `PROJECT_MEMORY/CURRENT_TASK.md`
 - `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_MEMORY/PROJECT_STATE.md`
 - `PROJECT_CHANGELOG.md`
 
-## Implementation Steps Completed
-- [x] Phase 1: Database Schema Migration (`notifications` table, `scan_events` verification fields, `qr_codes` refill status, `process_scan` RPC)
-- [x] Phase 2: AI 100-Review Generation Engine & UI Integration (with category selector and progress feedback)
-- [x] Phase 3: Message Curation Controls (inline edit, individual delete, custom add, manual 100 regeneration)
-- [x] Phase 4: 100-Message Exhaustion Notification & Accept/Reject Permission Flow (`NotificationBell.tsx` & in-app banner)
-- [x] Phase 5: 24-Hour Verification Agent (`api/cron-audit.ts` + `vercel.json` 00:00 daily cron, 24h+ maturity filter, Google review matching)
-- [x] Phase 6: Verification Analytics Table in UI with Status Badges (Successful / Fail / Awaiting 24h) and Manual Audit Trigger
-- [x] Phase 7: Unit Testing (`geminiReviews.test.ts`) & Vite Production Build Verification (0 errors)
+## Completed Implementation Steps
+- [x] Phase 1: Database schema updates (`marked_for_audit`, `audit_requested_at`, `audit_count` in `scan_events` and `last_audit_requested_at` in `qr_codes`)
+- [x] Phase 2: Agent deduplication & dual-condition eligibility logic (`src/lib/auditAgent.ts`, `api/cron-audit.ts`, `server/index.js`)
+- [x] Phase 3: Business-level "Mark for Review" button in `Dashboard.tsx` and `QRDetail.tsx`
+- [x] Phase 4: Row-level "Fast-Track Review ⚡" and "Mark for Re-Review 🔄" actions in `Analytics.tsx` and `QRDetail.tsx`
+- [x] Phase 5: Verification testing (Vitest 7/7 passed), ESLint (0 errors), and clean Vite production build

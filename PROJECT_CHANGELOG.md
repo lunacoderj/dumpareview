@@ -1,5 +1,68 @@
 # Project Changelog - DumpaReview
 
+## [2026-11-02] - Implementation & Verification: 'Mark for Review' On-Demand Audit, Deduplication & Re-Review
+
+### Changes Made & Updates
+- **Fast-Track Audit & Maturation Bypass**:
+  - Implemented business-level "Mark for Review" button in `Dashboard.tsx` and `QRDetail.tsx` allowing business owners to queue scans for agent audit before the 24-hour maturation deadline (even 1 minute after scanning).
+- **Strict Deduplication Engine**:
+  - Configured agent to strictly skip and exclude review messages already marked `verified_success`, avoiding duplicate scraping or reprocessing.
+- **Granular Row-Level Actions in Analytics**:
+  - Added "Mark for Re-Review 🔄" for failed reviews (`verified_fail` -> `pending`, `marked_for_audit = true`).
+  - Added "Fast-Track Audit ⚡" for pending recent reviews (< 24h old) to bypass the 24h maturation lock immediately.
+  - Added "Verified (Skipped)" badge for successful reviews.
+  - Added business filter dropdown for isolated review audits.
+- **Database Schema Upgrades**:
+  - Added `marked_for_audit BOOLEAN DEFAULT false`, `audit_requested_at TIMESTAMP`, and `audit_count INTEGER DEFAULT 0` to `scan_events` in `supabase_schema.sql`.
+  - Added `last_audit_requested_at TIMESTAMP` to `qr_codes`.
+  - Added composite index `idx_scan_events_audit_ready` on `(verification_status, marked_for_audit, scanned_at)`.
+- **Backend & Cron Engine Alignment**:
+  - Updated `src/lib/auditAgent.ts`, `api/cron-audit.ts` (Vercel daily cron), and `server/index.js` (Express cron & manual endpoint) to enforce dual-condition eligibility: `(verification_status = 'pending') AND (marked_for_audit = true OR scanned_at <= now() - 24 hours)`.
+- **Quality Assurance & Verification**:
+  - Unit tests created in `src/test/auditAgent.test.ts` (7/7 tests passed across all 3 test suites).
+  - ESLint errors in `api/cron-audit.ts`, `SeoHead.tsx`, `auditAgent.ts`, and `geminiReviews.ts` fixed; ESLint passed with 0 errors.
+  - Production build compiled with `vite build` cleanly into `dist/` with 0 errors.
+
+### Files Created
+- `src/test/auditAgent.test.ts`
+
+### Files Modified
+- `supabase_schema.sql`
+- `src/lib/auditAgent.ts`
+- `api/cron-audit.ts`
+- `server/index.js`
+- `src/pages/Analytics.tsx`
+- `src/pages/QRDetail.tsx`
+- `src/pages/Dashboard.tsx`
+- `src/components/SeoHead.tsx`
+- `src/lib/geminiReviews.ts`
+- `PROJECT_MEMORY/PROJECT_STATE.md`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_CHANGELOG.md`
+
+### Files Deleted
+- `scratch/update_server.cjs`
+
+## [2026-11-02] - Planning: 'Mark for Review' On-Demand Audit & Row-Level Re-Review System
+
+### Changes Made & Updates
+- **On-Demand Audit Trigger & 24h Bypass Architecture**:
+  - Detailed design for business-level "Mark for Review" button allowing business owners to fast-track scans for agent audit before the 24-hour maturation deadline (even 1 minute after scanning).
+  - Built-in deduplication engine: strictly excludes reviews that have already been audited and marked `verified_success`, avoiding redundant scraping and saving API costs.
+  - Granular table actions: provides row-level "Fast-Track Review ⚡" for recent unverified scans and "Mark for Re-Review 🔄" for failed reviews to request an agent re-audit.
+- **Project Records Updated**:
+  - Created implementation plan artifact `dumpareview_mark_for_review_plan.md`.
+  - Updated `PROJECT_MEMORY/CURRENT_TASK.md` and `PROJECT_MEMORY/CHANGELOG.md`.
+
+### Files Created
+- `dumpareview_mark_for_review_plan.md` (Artifact)
+
+### Files Modified
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_CHANGELOG.md`
+
 ## [2026-11-02] - AI 100-Review Generator, Curation Engine, & 24-Hour Verification Agent Implementation
 
 ### Changes Made & Updates

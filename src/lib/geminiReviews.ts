@@ -140,9 +140,9 @@ function buildAlgorithmicReviews(name: string, category: string): string[] {
   ];
 
   // 1. Generate 3-sentence narrative reviews
-  for (let s of starters) {
-    for (let m of middlePunch) {
-      for (let c of closers) {
+  for (const s of starters) {
+    for (const m of middlePunch) {
+      for (const c of closers) {
         if (reviews.size >= 100) break;
         reviews.add(`${s} ${m} ${c}`);
       }

@@ -24,7 +24,7 @@ export interface AuditRunSummary {
  * Normalizes review text for reliable matching by removing excess whitespace,
  * punctuation, and casing differences.
  */
-function normalizeText(text: string): string {
+export function normalizeText(text: string): string {
   return (text || "")
     .toLowerCase()
     .replace(/[^\w\s]/g, "")
@@ -35,7 +35,7 @@ function normalizeText(text: string): string {
 /**
  * Computes simple word-overlap similarity ratio (0 to 1)
  */
-function computeSimilarity(str1: string, str2: string): number {
+export function computeSimilarity(str1: string, str2: string): number {
   const norm1 = normalizeText(str1);
   const norm2 = normalizeText(str2);
   if (!norm1 || !norm2) return 0;
@@ -53,25 +53,116 @@ function computeSimilarity(str1: string, str2: string): number {
 }
 
 /**
- * Executes 24-Hour Review Verification Audit
- * Enforces the strict 24-hour maturation rule:
- * Scans < 24 hours old are strictly held back for the next 24-hour cycle.
+ * Fast-tracks an individual scan event for audit before the 24-hour maturation deadline
+ */
+export async function markScanForAudit(scanId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from("scan_events")
+      .update({
+        marked_for_audit: true,
+        audit_requested_at: new Date().toISOString(),
+      })
+      .eq("id", scanId);
+
+    return !error;
+  } catch (err) {
+    console.error("Failed to mark scan for audit:", err);
+    return false;
+  }
+}
+
+/**
+ * Marks a failed or unverified scan event for re-review by resetting verification status to pending
+ */
+export async function markScanForReReview(scanId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from("scan_events")
+      .update({
+        verification_status: "pending",
+        marked_for_audit: true,
+        audit_requested_at: new Date().toISOString(),
+      })
+      .eq("id", scanId);
+
+    return !error;
+  } catch (err) {
+    console.error("Failed to mark scan for re-review:", err);
+    return false;
+  }
+}
+
+/**
+ * Marks all pending or unverified scans of a specific business/QR code for audit
+ */
+export async function markBusinessForAudit(qrId: string): Promise<number> {
+  try {
+    // 1. Update QR code timestamp
+    await supabase
+      .from("qr_codes")
+      .update({ last_audit_requested_at: new Date().toISOString() })
+      .eq("id", qrId);
+
+    // 2. Mark all pending or failed scans for this QR code
+    const { data: updated, error } = await supabase
+      .from("scan_events")
+      .update({
+        verification_status: "pending",
+        marked_for_audit: true,
+        audit_requested_at: new Date().toISOString(),
+      })
+      .eq("qr_code_id", qrId)
+      .neq("verification_status", "verified_success")
+      .select("id");
+
+    if (error) throw error;
+    return updated ? updated.length : 0;
+  } catch (err) {
+    console.error("Failed to mark business for audit:", err);
+    return 0;
+  }
+}
+
+/**
+ * Executes Review Verification Audit with Dual-Condition Eligibility:
+ * 1. Strictly EXCLUDES scans already marked 'verified_success' (never re-scrapes verified reviews).
+ * 2. Scans are eligible if verification_status = 'pending' AND EITHER:
+ *    - marked_for_audit = true (explicit owner request - even 1 min after scan), OR
+ *    - scanned_at <= now() - 24 hours (standard 24h maturation completed).
  */
 export async function run24HourAuditAgent(userId?: string): Promise<AuditRunSummary> {
   const batchId = `BATCH-${new Date().toISOString().slice(0, 10)}`;
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-  // 1. Fetch pending scan events older than 24 hours
+  // 1. Fetch pending scans (strictly exclude verified_success)
   let query = supabase
     .from("scan_events")
-    .select("id, qr_code_id, message_used, scanned_at, qr_codes(id, name, user_id, google_review_link)")
+    .select("id, qr_code_id, message_used, scanned_at, marked_for_audit, audit_count, qr_codes(id, name, user_id, google_review_link)")
     .eq("verification_status", "pending")
-    .lte("scanned_at", twentyFourHoursAgo)
     .order("scanned_at", { ascending: true });
 
-  const { data: eligibleScans, error: fetchErr } = await query;
+  const { data: pendingScans, error: fetchErr } = await query;
 
-  if (fetchErr || !eligibleScans || eligibleScans.length === 0) {
+  if (fetchErr || !pendingScans || pendingScans.length === 0) {
+    return {
+      batchId,
+      totalEligible: 0,
+      successCount: 0,
+      failCount: 0,
+      scansChecked: [],
+    };
+  }
+
+  // 2. Apply Dual-Condition Eligibility Filter:
+  // - Either manually marked by owner (marked_for_audit === true)
+  // - Or completed standard 24h maturation (scanned_at <= 24h ago)
+  const eligibleScans = pendingScans.filter((s: { marked_for_audit?: boolean; scanned_at: string }) => {
+    if (s.marked_for_audit) return true;
+    return new Date(s.scanned_at) <= new Date(twentyFourHoursAgo);
+  });
+
+  if (eligibleScans.length === 0) {
     return {
       batchId,
       totalEligible: 0,
@@ -97,15 +188,14 @@ export async function run24HourAuditAgent(userId?: string): Promise<AuditRunSumm
     const qrName = qrObj?.name || "Business";
 
     // Matching against live Google review text
-    // If Apify scraped reviews exist in database for this campaign/qr, query them:
     let matchFound = false;
-    let matchNotes = "Audit completed by 24hr Agent";
+    let matchNotes = "Audit completed by Verification Agent";
 
     try {
       const { data: scraped } = await supabase
         .from("apify_scraped_reviews")
         .select("review_text, reviewer_name, stars")
-        .limit(100);
+        .limit(200);
 
       if (scraped && scraped.length > 0) {
         for (const rev of scraped) {
@@ -129,11 +219,15 @@ export async function run24HourAuditAgent(userId?: string): Promise<AuditRunSumm
       failCount++;
     }
 
-    // 2. Update scan event with audit result
+    const currentAuditCount = (scan.audit_count || 0) + 1;
+
+    // 3. Update scan event with audit result and reset marked_for_audit flag
     await supabase
       .from("scan_events")
       .update({
         verification_status: finalStatus,
+        marked_for_audit: false,
+        audit_count: currentAuditCount,
         verified_at: new Date().toISOString(),
         verification_batch_id: batchId,
         agent_notes: matchNotes,
@@ -152,13 +246,13 @@ export async function run24HourAuditAgent(userId?: string): Promise<AuditRunSumm
     });
   }
 
-  // 3. Insert notification if user is logged in
+  // 4. Insert notification if user is logged in
   if (userId && results.length > 0) {
     await supabase.from("notifications").insert({
       user_id: userId,
       type: "batch_audit_completed",
-      title: "24-Hour Review Audit Complete",
-      message: `24-Hour Agent verified ${results.length} scan(s): ${successCount} verified on Google, ${failCount} not found.`,
+      title: "Review Audit Complete",
+      message: `Audit Agent verified ${results.length} scan(s): ${successCount} verified on Google, ${failCount} not found.`,
       action_type: "none",
       action_status: "accepted",
     });
@@ -172,4 +266,3 @@ export async function run24HourAuditAgent(userId?: string): Promise<AuditRunSumm
     scansChecked: results,
   };
 }
-

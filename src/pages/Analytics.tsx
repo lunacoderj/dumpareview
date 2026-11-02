@@ -14,6 +14,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   BarChart,
   Bar,
   XAxis,
@@ -28,15 +35,16 @@ import {
   CheckCircle,
   QrCode,
   Clock,
-  MessageSquare,
   ShieldCheck,
   X,
-  Sparkles,
   TrendingUp,
   RefreshCw,
+  Zap,
+  RotateCcw,
+  Check,
 } from "lucide-react";
 import { format, differenceInHours } from "date-fns";
-import { run24HourAuditAgent } from "@/lib/auditAgent";
+import { run24HourAuditAgent, markScanForAudit, markScanForReReview } from "@/lib/auditAgent";
 import { toast } from "sonner";
 
 interface QRCode {
@@ -53,6 +61,8 @@ interface ScanEvent {
   message_used: string | null;
   message_index: number | null;
   verification_status?: string;
+  marked_for_audit?: boolean;
+  audit_count?: number;
   verified_at?: string;
   verification_batch_id?: string;
   agent_notes?: string;
@@ -65,8 +75,10 @@ export default function Analytics() {
   const navigate = useNavigate();
   const [qrCodes, setQrCodes] = useState<QRCode[]>([]);
   const [scanEvents, setScanEvents] = useState<ScanEvent[]>([]);
+  const [selectedQR, setSelectedQR] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const [runningAudit, setRunningAudit] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -85,15 +97,14 @@ export default function Analytics() {
         .order("successful_scans", { ascending: false }),
       supabase
         .from("scan_events")
-        .select("id, qr_code_id, message_used, message_index, verification_status, verified_at, verification_batch_id, agent_notes, scanned_at")
+        .select("id, qr_code_id, message_used, message_index, verification_status, marked_for_audit, audit_count, verified_at, verification_batch_id, agent_notes, scanned_at")
         .order("scanned_at", { ascending: false })
-        .limit(200),
+        .limit(300),
     ]);
 
     const qrList = qrs ?? [];
     setQrCodes(qrList);
 
-    // Enrich events with QR name
     const qrMap = Object.fromEntries(qrList.map((q) => [q.id, q.name]));
     const enriched = (events ?? []).map((e) => ({
       ...e,
@@ -106,12 +117,12 @@ export default function Analytics() {
   const handleTriggerManualAudit = async () => {
     if (!user) return;
     setRunningAudit(true);
-    toast.info("24-Hour Agent is scanning eligible records (24h+ maturation)...");
+    toast.info("Audit Agent running on eligible scans (skips already verified reviews)...");
 
     try {
       const summary = await run24HourAuditAgent(user.uid);
       if (summary.totalEligible === 0) {
-        toast.info("No scans >= 24 hours old ready for audit. Recent scans are maturing in the 24h window.");
+        toast.info("No scans ready for audit. Recent scans under 24 hours are maturing (or click Fast-Track Review).");
       } else {
         toast.success(
           `Audit complete! Audited ${summary.totalEligible} scans: ${summary.successCount} verified on Google, ${summary.failCount} not found.`
@@ -125,12 +136,49 @@ export default function Analytics() {
     }
   };
 
+  // Row-level action: Fast-track a maturing scan (< 24h old)
+  const handleFastTrack = async (scanId: string) => {
+    setActionLoadingId(scanId);
+    const success = await markScanForAudit(scanId);
+    if (success) {
+      toast.success("Fast-tracked for review! The 24-hour wait is bypassed.");
+      setScanEvents((prev) =>
+        prev.map((e) => (e.id === scanId ? { ...e, marked_for_audit: true } : e))
+      );
+    } else {
+      toast.error("Failed to mark scan for review.");
+    }
+    setActionLoadingId(null);
+  };
+
+  // Row-level action: Mark failed review for re-review
+  const handleReReview = async (scanId: string) => {
+    setActionLoadingId(scanId);
+    const success = await markScanForReReview(scanId);
+    if (success) {
+      toast.success("Marked for re-review! The agent will re-audit Google Maps.");
+      setScanEvents((prev) =>
+        prev.map((e) =>
+          e.id === scanId ? { ...e, verification_status: "pending", marked_for_audit: true } : e
+        )
+      );
+    } else {
+      toast.error("Failed to mark for re-review.");
+    }
+    setActionLoadingId(null);
+  };
+
+  const filteredEvents =
+    selectedQR === "all" ? scanEvents : scanEvents.filter((e) => e.qr_code_id === selectedQR);
+
   const totalScans = qrCodes.reduce((s, q) => s + q.successful_scans, 0);
-  const totalMessages = qrCodes.reduce((s, q) => s + q.messages.length, 0);
   const verifiedSuccess = scanEvents.filter((e) => e.verification_status === "verified_success").length;
   const verifiedFail = scanEvents.filter((e) => e.verification_status === "verified_fail").length;
   const maturingScans = scanEvents.filter(
-    (e) => (!e.verification_status || e.verification_status === "pending") && differenceInHours(new Date(), new Date(e.scanned_at)) < 24
+    (e) => (!e.verification_status || e.verification_status === "pending") && !e.marked_for_audit && differenceInHours(new Date(), new Date(e.scanned_at)) < 24
+  ).length;
+  const queuedScans = scanEvents.filter(
+    (e) => e.verification_status === "pending" && (e.marked_for_audit || differenceInHours(new Date(), new Date(e.scanned_at)) >= 24)
   ).length;
 
   const conversionRate = totalScans > 0 ? Math.round((verifiedSuccess / totalScans) * 100) : 0;
@@ -161,10 +209,10 @@ export default function Analytics() {
             <div>
               <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
                 <BarChart3 className="h-7 w-7 text-primary" />
-                Review Performance & 24h Audit
+                Review Performance & Agent Audit
               </h1>
               <p className="text-muted-foreground mt-0.5 text-sm">
-                Detailed scan conversions and automated 24-hour verification agent results.
+                Track scans, fast-track reviews, and view 24-hour verification results.
               </p>
             </div>
           </div>
@@ -176,7 +224,7 @@ export default function Analytics() {
               className="hero-gradient text-white font-bold h-10 px-4 shadow-sm text-xs"
             >
               <RefreshCw className={`h-3.5 w-3.5 mr-2 ${runningAudit ? "animate-spin" : ""}`} />
-              {runningAudit ? "Auditing 24h Scans..." : "Run 24h Audit Now"}
+              {runningAudit ? "Auditing Reviews..." : "Run Audit Now"}
             </Button>
           </div>
         </div>
@@ -208,18 +256,18 @@ export default function Analytics() {
                   <span className="text-sm font-medium text-muted-foreground">Google Verified</span>
                 </div>
                 <p className="text-3xl font-bold text-foreground">{verifiedSuccess}</p>
-                <p className="text-xs text-muted-foreground mt-1">Confirmed by 24h Agent</p>
+                <p className="text-xs text-muted-foreground mt-1">Confirmed on Google (Avoided in audits)</p>
               </div>
 
               <div className="stat-card rounded-2xl">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="h-10 w-10 bg-amber-500 rounded-xl flex items-center justify-center">
-                    <Clock className="h-5 w-5 text-white" />
+                  <div className="h-10 w-10 bg-blue-500 rounded-xl flex items-center justify-center">
+                    <Zap className="h-5 w-5 text-white" />
                   </div>
-                  <span className="text-sm font-medium text-muted-foreground">Maturing in 24h</span>
+                  <span className="text-sm font-medium text-muted-foreground">Queued for Audit</span>
                 </div>
-                <p className="text-3xl font-bold text-foreground">{maturingScans}</p>
-                <p className="text-xs text-muted-foreground mt-1">Awaits next daily cycle</p>
+                <p className="text-3xl font-bold text-foreground">{queuedScans}</p>
+                <p className="text-xs text-muted-foreground mt-1">Ready for next cycle run</p>
               </div>
 
               <div className="stat-card rounded-2xl">
@@ -265,41 +313,57 @@ export default function Analytics() {
                 <div>
                   <h2 className="font-bold text-foreground text-lg flex items-center gap-2">
                     <ShieldCheck className="h-5 w-5 text-primary" />
-                    24-Hour Review Verification Audit Log
+                    Review Verification Audit Log & Actions
                   </h2>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Automated agent verifies reviews on Google once daily (00:00 UTC) after a 24-hour maturation window.
+                    Scans verified on Google are automatically avoided. Mark failed or recent reviews for immediate audit.
                   </p>
                 </div>
-                <span className="text-xs text-muted-foreground bg-secondary px-3 py-1 rounded-full font-medium">
-                  {scanEvents.length} recorded scans
-                </span>
+                <div className="flex items-center gap-3">
+                  <Select value={selectedQR} onValueChange={setSelectedQR}>
+                    <SelectTrigger className="w-48 h-9 text-xs">
+                      <SelectValue placeholder="All Businesses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Businesses</SelectItem>
+                      {qrCodes.map((qr) => (
+                        <SelectItem key={qr.id} value={qr.id}>
+                          {qr.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-xs text-muted-foreground bg-secondary px-3 py-1 rounded-full font-medium">
+                    {filteredEvents.length} scans
+                  </span>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/40">
-                      <TableHead className="w-14 font-semibold text-center">#</TableHead>
+                      <TableHead className="w-12 font-semibold text-center">#</TableHead>
                       <TableHead className="font-semibold">Review Message Text</TableHead>
-                      <TableHead className="font-semibold w-40">Scan Timestamp</TableHead>
-                      <TableHead className="font-semibold w-36">Maturation Age</TableHead>
-                      <TableHead className="font-semibold text-center w-52">
-                        24-Hour Agent Audit Result
-                      </TableHead>
+                      <TableHead className="font-semibold w-36">Scan Time</TableHead>
+                      <TableHead className="font-semibold text-center w-40">Agent Status</TableHead>
+                      <TableHead className="font-semibold text-right w-44">Audit Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {scanEvents.length === 0 ? (
+                    {filteredEvents.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
-                          No scan events recorded yet. Share your QR codes to begin collecting and verifying reviews!
+                          No scan events recorded yet.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      scanEvents.map((event, idx) => {
+                      filteredEvents.map((event, idx) => {
                         const hoursAgo = differenceInHours(new Date(), new Date(event.scanned_at));
                         const isMatured = hoursAgo >= 24;
+                        const isSuccess = event.verification_status === "verified_success";
+                        const isFail = event.verification_status === "verified_fail";
+                        const isQueued = event.marked_for_audit;
 
                         return (
                           <TableRow key={event.id} className="hover:bg-muted/30 transition-colors">
@@ -312,49 +376,88 @@ export default function Analytics() {
                                 <p className="text-sm font-medium text-foreground max-w-lg leading-relaxed italic">
                                   "{event.message_used ?? "No message assigned"}"
                                 </p>
-                                <span className="text-[11px] text-muted-foreground block">
-                                  Location: <strong className="text-foreground/80">{event.qr_name}</strong>
-                                </span>
+                                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                                  <span>Location: <strong className="text-foreground/80">{event.qr_name}</strong></span>
+                                  <span>·</span>
+                                  {isMatured ? (
+                                    <span className="text-emerald-600 font-semibold">{hoursAgo}h old</span>
+                                  ) : (
+                                    <span className="text-amber-600 font-medium">{hoursAgo}/24h old</span>
+                                  )}
+                                  {(event.audit_count ?? 0) > 0 && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="text-muted-foreground">Checked {event.audit_count}x</span>
+                                    </>
+                                  )}
+                                </div>
                               </div>
                             </TableCell>
 
                             <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                              {format(new Date(event.scanned_at), "MMM d, yyyy · h:mm a")}
-                            </TableCell>
-
-                            <TableCell>
-                              {isMatured ? (
-                                <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
-                                  Mature ({hoursAgo}h old)
-                                </span>
-                              ) : (
-                                <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md">
-                                  {hoursAgo}/24h (Defers to next cycle)
-                                </span>
-                              )}
+                              {format(new Date(event.scanned_at), "MMM d, h:mm a")}
                             </TableCell>
 
                             <TableCell className="text-center">
-                              {event.verification_status === "verified_success" ? (
-                                <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs px-3 py-1 shadow-sm">
-                                  <ShieldCheck className="h-3.5 w-3.5 mr-1" />
-                                  Successful (Verified by Agent)
+                              {isSuccess ? (
+                                <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs px-2.5 py-0.5 shadow-sm">
+                                  <ShieldCheck className="h-3 w-3 mr-1" />
+                                  Successful
                                 </Badge>
-                              ) : event.verification_status === "verified_fail" ? (
-                                <Badge variant="destructive" className="font-bold text-xs px-3 py-1">
-                                  <X className="h-3.5 w-3.5 mr-1" />
-                                  Fail (Not on Google)
+                              ) : isFail ? (
+                                <Badge variant="destructive" className="font-bold text-xs px-2.5 py-0.5">
+                                  <X className="h-3 w-3 mr-1" />
+                                  Failed
+                                </Badge>
+                              ) : isQueued ? (
+                                <Badge className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[11px] px-2.5 py-0.5">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Queued for Audit
                                 </Badge>
                               ) : isMatured ? (
                                 <Badge variant="secondary" className="font-semibold text-xs px-2.5 py-0.5 text-blue-700 bg-blue-50">
-                                  <Clock className="h-3.5 w-3.5 mr-1" />
-                                  Eligible for Next 24h Batch
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Ready (24h+)
                                 </Badge>
                               ) : (
                                 <Badge variant="outline" className="font-medium text-[11px] px-2 py-0.5 text-muted-foreground">
-                                  <Clock className="h-3.5 w-3.5 mr-1" />
-                                  Awaiting 24h Window
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Maturing ({hoursAgo}/24h)
                                 </Badge>
+                              )}
+                            </TableCell>
+
+                            <TableCell className="text-right">
+                              {isSuccess ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                  <Check className="h-3 w-3" /> Verified (Skipped)
+                                </span>
+                              ) : isFail ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={actionLoadingId === event.id}
+                                  onClick={() => handleReReview(event.id)}
+                                  className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 font-bold"
+                                >
+                                  <RotateCcw className="h-3 w-3 mr-1" />
+                                  {actionLoadingId === event.id ? "Queuing..." : "Mark Re-Review"}
+                                </Button>
+                              ) : isQueued ? (
+                                <span className="text-[11px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                                  Queued for Agent
+                                </span>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={actionLoadingId === event.id}
+                                  onClick={() => handleFastTrack(event.id)}
+                                  className="h-7 text-xs font-semibold text-primary hover:bg-primary/5"
+                                >
+                                  <Zap className="h-3 w-3 mr-1 text-amber-500 fill-amber-500" />
+                                  {actionLoadingId === event.id ? "Fast-tracking..." : "Fast-Track Audit"}
+                                </Button>
                               )}
                             </TableCell>
                           </TableRow>

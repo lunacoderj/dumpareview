@@ -56,7 +56,7 @@ export const SeoHead: React.FC<SeoHeadProps> = ({
     linkCanonical.setAttribute("href", targetCanonical);
 
     // OpenGraph URL
-    let ogUrl = document.querySelector('meta[property="og:url"]');
+    const ogUrl = document.querySelector('meta[property="og:url"]');
     if (ogUrl) {
       ogUrl.setAttribute("content", targetCanonical);
     }
