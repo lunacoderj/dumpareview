@@ -262,18 +262,36 @@ export default function QRDetail() {
         category: qr.business_category || "General Business",
       });
 
-      const { error } = await supabase
+      const fullPayload = {
+        messages: freshReviews,
+        message_used_counts: new Array(freshReviews.length).fill(0),
+        current_message_index: 0,
+        status: "active",
+        auto_refill_prompted: false,
+        last_generated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      let { error } = await supabase
         .from("qr_codes")
-        .update({
+        .update(fullPayload)
+        .eq("id", qr.id);
+
+      // Fallback for legacy DB schema without status/auto_refill_prompted
+      if (error) {
+        console.warn("[DumpaReview] Full update failed, retrying with core columns:", error.message);
+        const baselinePayload = {
           messages: freshReviews,
           message_used_counts: new Array(freshReviews.length).fill(0),
           current_message_index: 0,
-          status: "active",
-          auto_refill_prompted: false,
-          last_generated_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        })
-        .eq("id", qr.id);
+        };
+        const fbRes = await supabase
+          .from("qr_codes")
+          .update(baselinePayload)
+          .eq("id", qr.id);
+        error = fbRes.error;
+      }
 
       if (error) throw error;
 

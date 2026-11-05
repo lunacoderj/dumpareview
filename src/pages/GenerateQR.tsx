@@ -107,22 +107,45 @@ export default function GenerateQR() {
         avatar_url: user.photoURL || ""
       }, { onConflict: "user_id" });
 
-      const { data, error } = await supabase
+      const fullPayload = {
+        user_id: user.uid,
+        name: name.trim(),
+        google_review_link: link.trim(),
+        business_category: category,
+        status: "active",
+        auto_refill_prompted: false,
+        messages: validMessages,
+        message_used_counts: new Array(validMessages.length).fill(0),
+        current_message_index: 0,
+        successful_scans: 0,
+      };
+
+      let { data, error } = await supabase
         .from("qr_codes")
-        .insert({
+        .insert(fullPayload)
+        .select()
+        .single();
+
+      // Fallback for legacy database schema without business_category / status
+      if (error) {
+        console.warn("[DumpaReview] Full insert failed, retrying with core columns:", error.message);
+        const baselinePayload = {
           user_id: user.uid,
           name: name.trim(),
           google_review_link: link.trim(),
-          business_category: category,
-          status: "active",
-          auto_refill_prompted: false,
           messages: validMessages,
           message_used_counts: new Array(validMessages.length).fill(0),
           current_message_index: 0,
           successful_scans: 0,
-        })
-        .select()
-        .single();
+        };
+        const fbRes = await supabase
+          .from("qr_codes")
+          .insert(baselinePayload)
+          .select()
+          .single();
+        data = fbRes.data;
+        error = fbRes.error;
+      }
 
       if (error) throw error;
 

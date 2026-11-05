@@ -1,7 +1,18 @@
 import { createClient } from "@supabase/supabase-js";
 
+interface ApiRequest {
+  method?: string;
+  headers?: Record<string, string | string[] | undefined>;
+}
+
+interface ApiResponse {
+  status: (statusCode: number) => {
+    json: (body: unknown) => void;
+  };
+}
+
 // Vercel Serverless Function Cron Handler (Runs daily at 00:00 UTC)
-export default async function handler(req: any, res: any) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== "GET" && req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -100,8 +111,9 @@ export default async function handler(req: any, res: any) {
       failCount,
       timestamp: new Date().toISOString(),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[Daily Cron Audit Error]:", error);
-    return res.status(500).json({ error: error.message || "Audit execution failed" });
+    const message = error instanceof Error ? error.message : "Audit execution failed";
+    return res.status(500).json({ error: message });
   }
 }

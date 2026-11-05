@@ -81,6 +81,13 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
 
+-- Safe migrations for existing notifications table:
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS qr_code_id UUID REFERENCES public.qr_codes(id) ON DELETE CASCADE;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'messages_exhausted';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS action_type TEXT DEFAULT 'none';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS action_status TEXT DEFAULT 'pending';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false;
+
 -- Indices for performance
 CREATE INDEX IF NOT EXISTS idx_scan_events_audit_ready ON public.scan_events (verification_status, marked_for_audit, scanned_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications (user_id, is_read);

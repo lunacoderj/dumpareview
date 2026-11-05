@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dumpareview-v2';
+const CACHE_NAME = 'dumpareview-v3';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -33,9 +33,14 @@ self.addEventListener('fetch', (event) => {
   // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
-  // Network-first for SPA navigation (HTML document)
-  // This ensures new deployments are immediately received rather than serving stale asset hashes
-  if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+  const isNavigation = event.request.mode === 'navigate' ||
+    event.request.headers.get('accept')?.includes('text/html') ||
+    url.pathname === '/' ||
+    url.pathname === '/index.html' ||
+    !url.pathname.includes('.');
+
+  // Network-first for SPA navigation (HTML document / SPA routes like /qr/:id, /scan/:id)
+  if (isNavigation) {
     event.respondWith(
       fetch(event.request)
         .then((networkResponse) => {
@@ -47,20 +52,25 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => {
-          // If offline, fallback to cached index.html
-          return caches.match('/index.html');
+        .catch(async () => {
+          // If offline or fetch failed, fallback to cached index.html
+          const cached = await caches.match('/index.html');
+          if (cached) return cached;
+          return caches.match('/');
         })
     );
     return;
   }
 
-  // Cache-first for local static assets
+  // Cache-first for local static assets (JS, CSS, images, etc.)
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) return cachedResponse;
 
-      return fetch(event.request);
+      return fetch(event.request).catch(async () => {
+        // Fallback gracefully instead of rejecting unhandled
+        return new Response('', { status: 408, statusText: 'Request timed out / offline' });
+      });
     })
   );
 });

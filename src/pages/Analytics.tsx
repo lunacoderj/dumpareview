@@ -105,9 +105,23 @@ export default function Analytics() {
     const qrList = qrs ?? [];
     setQrCodes(qrList);
 
+    // Resilient fallback if verification_status columns are not yet migrated
+    let eventsList = events;
+    if (!eventsList) {
+      const { data: fallbackEvents } = await supabase
+        .from("scan_events")
+        .select("id, qr_code_id, message_used, message_index, scanned_at")
+        .order("scanned_at", { ascending: false })
+        .limit(300);
+      eventsList = fallbackEvents as typeof events;
+    }
+
     const qrMap = Object.fromEntries(qrList.map((q) => [q.id, q.name]));
-    const enriched = (events ?? []).map((e) => ({
+    const enriched = (eventsList ?? []).map((e) => ({
       ...e,
+      verification_status: e.verification_status || "pending",
+      marked_for_audit: e.marked_for_audit || false,
+      audit_count: e.audit_count || 0,
       qr_name: qrMap[e.qr_code_id] ?? "Unknown",
     }));
     setScanEvents(enriched);

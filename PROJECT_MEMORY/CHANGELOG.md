@@ -3,6 +3,37 @@
 All changes to this project are recorded here in reverse-chronological order.
 This file is append-only — do not rewrite or remove previous entries.
 
+## 2026-11-05 (Fix: Resilient Schema Fallbacks, Service Worker Fetch Crash, & PostgREST 400 Resolution)
+
+### Issues Diagnosed
+1. **Service Worker Navigation Crash**: `public/sw.js` threw `Uncaught (in promise) TypeError: Failed to fetch` at line 63 when intercepting SPA routes (like `/qr/:id`) because client-side requests without `'navigate'` mode fell through to the static asset cache-first block with no rejection catch handler.
+2. **PostgREST 400 Bad Request on Notifications**: `NotificationBell.tsx` queried `notifications?select=*,qr_codes(name,business_category)` which failed with error `PGRST200` ("Searched for a foreign key relationship between notifications and qr_codes in schema public, but no matches were found").
+3. **AI 100 Messages & QR Generation Failures**: The live Supabase database was missing columns `business_category`, `status`, and `auto_refill_prompted` on `qr_codes`, causing `insert` and `update` calls to fail with error 42703.
+4. **Audit Agent & Analytics Failures**: The live Supabase database was missing `verification_status` and `marked_for_audit` on `scan_events`, causing queries to fail with 400 Bad Request.
+
+### Fixes Applied
+- **`public/sw.js`**: Enhanced SPA navigation check to recognize all extension-less paths and `text/html` requests; wrapped all fetch calls with `.catch()` falling back to `/index.html` or graceful timeout response; bumped cache name to `dumpareview-v3`.
+- **`src/components/NotificationBell.tsx`**: Removed foreign key join from `notifications` query; implemented client-side in-memory QR mapping; normalized `read` and `is_read` column names.
+- **`src/pages/GenerateQR.tsx`**: Implemented two-tier insert logic: attempts full schema first, automatically falls back to baseline core columns (`user_id`, `name`, `google_review_link`, `messages`, `message_used_counts`, `current_message_index`, `successful_scans`) if new columns are not yet present in DB.
+- **`src/pages/QRDetail.tsx`**: Implemented two-tier update logic: attempts full schema first, automatically falls back to core columns (`messages`, `message_used_counts`, `current_message_index`, `updated_at`) on 100 fresh review regeneration.
+- **`src/pages/Analytics.tsx`**: Added query fallback for `scan_events` so table renders existing scans even on legacy database schemas.
+- **`src/lib/auditAgent.ts`**: Added baseline query fallback for pending scans.
+- **`supabase_schema.sql`**: Added safe migrations for existing `notifications` table (`qr_code_id`, `type`, `action_type`, `action_status`, `is_read`).
+- **Tests & Quality**: 7/7 Vitest unit tests passed; ESLint passed with 0 errors; Vite production build passed cleanly.
+
+### Files Modified
+- `public/sw.js`
+- `src/components/NotificationBell.tsx`
+- `src/pages/GenerateQR.tsx`
+- `src/pages/QRDetail.tsx`
+- `src/pages/Analytics.tsx`
+- `src/lib/auditAgent.ts`
+- `api/cron-audit.ts`
+- `supabase_schema.sql`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_CHANGELOG.md`
+
 ## 2026-11-02 (Implementation & Verification: 'Mark for Review' On-Demand Audit, Deduplication & Re-Review)
 
 ### Task

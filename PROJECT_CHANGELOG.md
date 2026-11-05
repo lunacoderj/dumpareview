@@ -1,5 +1,44 @@
 # Project Changelog - DumpaReview
 
+## [2026-11-05] - Resilient Schema Fallbacks, Service Worker Navigation Crash Fix, & PostgREST 400 Resolution
+
+### Root Cause Analysis
+1. **Service Worker Navigation Crash**: `public/sw.js` threw `Uncaught (in promise) TypeError: Failed to fetch` on `/qr/:id` routes because unhandled promise rejections in fetch events caused the browser to reject SPA route loads.
+2. **PostgREST 400 Bad Request on Notifications**: `NotificationBell.tsx` queried `notifications?select=*,qr_codes(name,business_category)` which failed with error `PGRST200` due to a lack of foreign key constraint on the existing table in Supabase.
+3. **AI 100 Messages & QR Generation Failures**: The live Supabase database had not yet had the schema migrations applied, so inserting or updating `business_category`, `status`, `auto_refill_prompted`, and `last_generated_at` threw Postgres column errors.
+4. **Audit Agent & Analytics Failures**: Missing `verification_status` and `marked_for_audit` columns in `scan_events` caused queries to return errors and fail silently.
+
+### Changes Made & Updates
+- **Service Worker Hardening (`public/sw.js`)**:
+  - Broadened SPA route detection: matches `navigate` mode, `accept: text/html`, root URLs, and all paths without file extensions.
+  - Wrapped all network fetch operations with `.catch()` fallback to `/index.html` or a graceful HTTP 408 response, preventing unhandled promise rejections.
+  - Bumped cache version to `dumpareview-v3` to ensure immediate client cache refresh.
+- **Graceful Supabase Schema Fallbacks**:
+  - In `src/components/NotificationBell.tsx`: decoupled the query to `select("*")` without foreign key join, resolving PostgREST 400 errors; added client-side in-memory mapping to `qr_codes`; handled both `read` and `is_read` column formats.
+  - In `src/pages/GenerateQR.tsx`: added automated fallback to core columns (`user_id`, `name`, `google_review_link`, `messages`, `message_used_counts`, `current_message_index`, `successful_scans`) so creating a QR code succeeds even if new columns are missing in DB.
+  - In `src/pages/QRDetail.tsx`: added automated fallback to core columns (`messages`, `message_used_counts`, `current_message_index`, `updated_at`) on 100 review generation, ensuring reviews are saved successfully.
+  - In `src/pages/Analytics.tsx`: added fallback query for `scan_events` so scan history is never blank.
+  - In `src/lib/auditAgent.ts`: added fallback query for pending scans.
+- **Database Schema Script Upgrade (`supabase_schema.sql`)**:
+  - Added explicit `ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS ...` statements for `qr_code_id`, `type`, `action_type`, `action_status`, and `is_read` to handle existing tables gracefully.
+- **Testing & Verification**:
+  - Vitest: 3 test suites, 7 tests all passed (100% pass rate).
+  - ESLint: 0 errors across codebase.
+  - Vite: Production build compiled cleanly into `dist/`.
+
+### Files Modified
+- `public/sw.js`
+- `src/components/NotificationBell.tsx`
+- `src/pages/GenerateQR.tsx`
+- `src/pages/QRDetail.tsx`
+- `src/pages/Analytics.tsx`
+- `src/lib/auditAgent.ts`
+- `api/cron-audit.ts`
+- `supabase_schema.sql`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_CHANGELOG.md`
+
 ## [2026-11-02] - Implementation & Verification: 'Mark for Review' On-Demand Audit, Deduplication & Re-Review
 
 ### Changes Made & Updates

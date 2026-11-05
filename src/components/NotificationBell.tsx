@@ -42,17 +42,48 @@ export function NotificationBell() {
     try {
       const { data, error } = await supabase
         .from("notifications")
-        .select("*, qr_codes(name, business_category)")
+        .select("*")
         .eq("user_id", user.uid)
         .order("created_at", { ascending: false })
         .limit(10);
 
       if (!error && data) {
-        setNotifications(data as unknown as NotificationItem[]);
-        setUnreadCount(data.filter((n: NotificationItem) => !n.is_read).length);
+        const rawList = data as unknown as Record<string, unknown>[];
+        const normalized: NotificationItem[] = rawList.map((n) => ({
+          id: String(n.id || ""),
+          user_id: String(n.user_id || ""),
+          qr_code_id: String(n.qr_code_id || ""),
+          type: String(n.type || "system"),
+          title: String(n.title || "Notification"),
+          message: String(n.message || ""),
+          action_type: String(n.action_type || "none"),
+          action_status: String(n.action_status || "pending"),
+          is_read: n.is_read !== undefined ? Boolean(n.is_read) : Boolean(n.read),
+          created_at: String(n.created_at || new Date().toISOString()),
+        }));
+
+        // Enrich with QR names without requiring foreign key join in Supabase
+        const qrIds = Array.from(new Set(normalized.map((n) => n.qr_code_id).filter(Boolean)));
+        if (qrIds.length > 0) {
+          const { data: qrs } = await supabase
+            .from("qr_codes")
+            .select("id, name")
+            .in("id", qrIds);
+          if (qrs) {
+            const qrMap = new Map((qrs as { id: string; name: string }[]).map((q) => [q.id, q.name]));
+            normalized.forEach((n) => {
+              if (n.qr_code_id && qrMap.has(n.qr_code_id)) {
+                n.qr_codes = { name: qrMap.get(n.qr_code_id)! };
+              }
+            });
+          }
+        }
+
+        setNotifications(normalized);
+        setUnreadCount(normalized.filter((n) => !n.is_read).length);
       }
     } catch {
-      // Table might be initializing
+      // Table might be initializing or offline
     }
   };
 
@@ -64,10 +95,14 @@ export function NotificationBell() {
 
   const handleMarkAllRead = async () => {
     if (!user) return;
-    await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("user_id", user.uid);
+    try {
+      await Promise.allSettled([
+        supabase.from("notifications").update({ is_read: true }).eq("user_id", user.uid),
+        supabase.from("notifications").update({ read: true }).eq("user_id", user.uid),
+      ]);
+    } catch {
+      // Ignore update error
+    }
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     setUnreadCount(0);
   };
@@ -84,30 +119,52 @@ export function NotificationBell() {
         category: qrCategory,
       });
 
-      // Update QR Code with new 100 messages
-      const { error: qrError } = await supabase
+      // Update QR Code with new 100 messages (with fallback for legacy schema)
+      const fullPayload = {
+        messages: newMessages,
+        message_used_counts: new Array(newMessages.length).fill(0),
+        current_message_index: 0,
+        status: "active",
+        auto_refill_prompted: false,
+        last_generated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      let { error: qrError } = await supabase
         .from("qr_codes")
-        .update({
-          messages: newMessages,
-          message_used_counts: new Array(newMessages.length).fill(0),
-          current_message_index: 0,
-          status: "active",
-          auto_refill_prompted: false,
-          last_generated_at: new Date().toISOString(),
-        })
+        .update(fullPayload)
         .eq("id", notif.qr_code_id);
+
+      if (qrError) {
+        console.warn("[DumpaReview] Full update failed, falling back to core columns:", qrError.message);
+        const fbRes = await supabase
+          .from("qr_codes")
+          .update({
+            messages: newMessages,
+            message_used_counts: new Array(newMessages.length).fill(0),
+            current_message_index: 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", notif.qr_code_id);
+        qrError = fbRes.error;
+      }
 
       if (qrError) throw qrError;
 
       // Update notification status
-      await supabase
-        .from("notifications")
-        .update({ action_status: "accepted", is_read: true })
-        .eq("id", notif.id);
+      try {
+        await supabase
+          .from("notifications")
+          .update({ action_status: "accepted", is_read: true })
+          .eq("id", notif.id);
+      } catch {
+        // Notification action update optional
+      }
 
       toast.success(`Success! 100 fresh reviews loaded for ${qrName}`);
       fetchNotifications();
     } catch (err) {
+      console.error(err);
       toast.error("Failed to generate new messages. Please try again.");
     } finally {
       setProcessingId(null);

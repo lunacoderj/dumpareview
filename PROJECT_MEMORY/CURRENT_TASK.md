@@ -1,29 +1,21 @@
 ## Current Objective
-Architect, implement, and verify 'Mark for Review' on-demand audit trigger, 24-hour maturation bypass, deduplication (skip already-verified reviews), and row-level re-review controls.
+Diagnose and resolve:
+1. "Failed to fetch" Service Worker uncaught promise rejection in `sw.js` breaking `/qr/:id` navigations.
+2. 400 Bad Request from Supabase on `notifications` and `qr_codes` queries due to missing schema migration and foreign key join.
+3. Fix AI 100 review generation and audit agent execution with resilient schema fallbacks so operations succeed regardless of database migration state.
 
 ## Current Status
-Completed & Verified - All phases implemented, tested with 100% test pass (Vitest: 3 test suites, 7 tests), 0 ESLint errors, and clean Vite production build.
+Completed & Verified - Resilient schema fallbacks deployed across frontend, service worker unhandled fetch crash resolved, all 7 unit tests passed, 0 ESLint errors, and clean Vite production build.
 
-## Files Modified / Created
-- `dumpareview_mark_for_review_plan.md` (Artifact)
-- `supabase_schema.sql` (Added columns and index for on-demand audit)
-- `src/lib/auditAgent.ts` (Dual-condition eligibility, mark functions, deduplication)
-- `api/cron-audit.ts` (Vercel daily cron with dual-condition audit & strict deduplication)
-- `server/index.js` (Express cron & manual trigger endpoint)
-- `src/pages/Dashboard.tsx` ("Mark Review" button per QR card)
-- `src/pages/QRDetail.tsx` ("Mark Business for Audit" + row actions in customer scan log)
-- `src/pages/Analytics.tsx` (Row-level Fast-Track & Re-Review buttons, business filter dropdown)
-- `src/test/auditAgent.test.ts` (Unit tests for text normalization & fuzzy similarity matching)
-- `src/components/SeoHead.tsx` (ESLint fix for const ogUrl)
-- `src/lib/geminiReviews.ts` (ESLint fix for const loop variables)
+## Files Modified
+- `public/sw.js` (Enhanced SPA navigation detection, eliminated uncaught fetch promise rejection, offline index.html fallback)
+- `src/components/NotificationBell.tsx` (Decoupled FK query to avoid PostgREST 400, in-memory QR mapping, normalized read/is_read)
+- `src/pages/GenerateQR.tsx` (Fallback to core columns if business_category/status columns missing)
+- `src/pages/QRDetail.tsx` (Fallback to core columns on 100 review update, guaranteed generation success)
+- `src/pages/Analytics.tsx` (Fallback query for scan_events on legacy schemas)
+- `src/lib/auditAgent.ts` (Resilient scan_events query fallback, ESLint const fixes)
+- `api/cron-audit.ts` (ESLint TypeScript types cleanup)
+- `supabase_schema.sql` (Added ALTER TABLE for notifications, consolidated safe migrations)
 - `PROJECT_MEMORY/CURRENT_TASK.md`
 - `PROJECT_MEMORY/CHANGELOG.md`
-- `PROJECT_MEMORY/PROJECT_STATE.md`
 - `PROJECT_CHANGELOG.md`
-
-## Completed Implementation Steps
-- [x] Phase 1: Database schema updates (`marked_for_audit`, `audit_requested_at`, `audit_count` in `scan_events` and `last_audit_requested_at` in `qr_codes`)
-- [x] Phase 2: Agent deduplication & dual-condition eligibility logic (`src/lib/auditAgent.ts`, `api/cron-audit.ts`, `server/index.js`)
-- [x] Phase 3: Business-level "Mark for Review" button in `Dashboard.tsx` and `QRDetail.tsx`
-- [x] Phase 4: Row-level "Fast-Track Review ⚡" and "Mark for Re-Review 🔄" actions in `Analytics.tsx` and `QRDetail.tsx`
-- [x] Phase 5: Verification testing (Vitest 7/7 passed), ESLint (0 errors), and clean Vite production build

@@ -136,13 +136,25 @@ export async function run24HourAuditAgent(userId?: string): Promise<AuditRunSumm
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   // 1. Fetch pending scans (strictly exclude verified_success)
-  let query = supabase
+  const query = supabase
     .from("scan_events")
     .select("id, qr_code_id, message_used, scanned_at, marked_for_audit, audit_count, qr_codes(id, name, user_id, google_review_link)")
     .eq("verification_status", "pending")
     .order("scanned_at", { ascending: true });
 
-  const { data: pendingScans, error: fetchErr } = await query;
+  let { data: pendingScans, error: fetchErr } = await query;
+
+  // Fallback for baseline schema if verification_status column is not yet migrated
+  if (fetchErr) {
+    console.warn("[AuditAgent] Query with verification_status failed, trying baseline query:", fetchErr.message);
+    const fallbackQuery = supabase
+      .from("scan_events")
+      .select("id, qr_code_id, message_used, scanned_at, qr_codes(id, name, user_id, google_review_link)")
+      .order("scanned_at", { ascending: true });
+    const fb = await fallbackQuery;
+    pendingScans = (fb.data as unknown as typeof pendingScans) || [];
+    fetchErr = fb.error;
+  }
 
   if (fetchErr || !pendingScans || pendingScans.length === 0) {
     return {
