@@ -1,5 +1,41 @@
 # Project Changelog - DumpaReview
 
+## [2026-11-09] - Live Google Maps Review Scraper & Audit False Negative Resolution
+
+### Root Cause Analysis
+- **Why reviews were marked "Not Found"**: The audit routines in `auditAgent.ts`, `api/cron-audit.ts`, and `server/index.js` were reading from the `apify_scraped_reviews` Supabase table. However, no scraper task had ever been configured to run for `qr_codes.google_review_link`. The table was completely empty (0 rows). Every scan message was being compared against an empty array `[]` and consequently marked as `verified_fail` ("Not Found").
+- **Google Short URL Handling**: Businesses use `https://share.google/...` and `https://maps.app.goo.gl/...` links which redirect to Google Maps places. These short links needed automated redirection resolution before passing to scraper actors.
+
+### Changes Made & Updates
+- **Live Google Maps Scraper on Backend (`server/index.js`)**:
+  - Implemented `resolveGoogleReviewLink` to follow short link redirects and retrieve canonical Google Maps place URLs.
+  - Implemented `scrapeReviewsForGoogleLink` calling Apify actor `compass/google-maps-reviews-scraper` with the business link to fetch the latest 50 reviews in real-time.
+  - Created `auditScansForQRCode` to scrape live reviews, match them using fuzzy similarity, and update `scan_events` with `verified_success`, reviewer name, star rating, and exact match notes.
+  - Added on-demand audit trigger endpoint `POST /api/audit/trigger` accepting `{ qrId, scanId, userId }`.
+- **Frontend Real-Time Trigger & Refresh (`src/lib/auditAgent.ts`, `QRDetail.tsx`, `Analytics.tsx`)**:
+  - Added `triggerBackendAudit` to fire the live Google Maps scraper whenever the owner clicks "Re-Review 🔄", "Fast-Track Audit", or "Run 24h Audit Now".
+  - Enhanced text normalization to strip emojis ("💙", "🚑", "👏", "😊", "🙏") and special characters.
+  - Improved fuzzy similarity algorithm using `Math.min` word overlap and a 0.70 threshold.
+  - Automatically reloaded the table data in `QRDetail.tsx` and `Analytics.tsx` so matched reviews turn green and verified immediately.
+- **Immediate Data Fix**:
+  - Successfully scraped live reviews for `H M Ambulance Services in Guntur` via Apify.
+  - Detected and updated 10 scans for `HM&Ambulance` (`4ba1c6f5-a01a-4335-abd3-0ae28f039a73`) and 8 scans for `HM Abulance` (`6cf00dc2-0c40-4e8a-95bc-5c04f36efc3c`) to `verified_success` with exact 100% matches (e.g. Dayananda Sagar: "💙 The driver was experienced and drove safely. We reached the hospital without any issues.").
+- **Quality & Tests**:
+  - Vitest: 8/8 tests passed.
+  - ESLint: 0 errors.
+  - Vite: Production build compiled cleanly into `dist/`.
+
+### Files Modified
+- `server/index.js`
+- `src/lib/auditAgent.ts`
+- `src/pages/QRDetail.tsx`
+- `src/pages/Analytics.tsx`
+- `api/cron-audit.ts`
+- `src/test/auditAgent.test.ts`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_CHANGELOG.md`
+
 ## [2026-11-05] - Resilient Schema Fallbacks, Service Worker Navigation Crash Fix, & PostgREST 400 Resolution
 
 ### Root Cause Analysis

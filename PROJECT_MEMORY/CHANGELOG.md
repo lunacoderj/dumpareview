@@ -3,6 +3,41 @@
 All changes to this project are recorded here in reverse-chronological order.
 This file is append-only — do not rewrite or remove previous entries.
 
+## 2026-11-09 (Fix: Live Google Maps Review Scraper & Audit False Negative Resolution)
+
+### Issues Diagnosed
+- **Audit False Negatives ("Not Found" for existing reviews)**: Live Google reviews (e.g., Dayananda Sagar: *"💙 The driver was experienced and drove safely. We reached the hospital without any issues."*) were showing as `❌ Not Found` in the Customer Scan Log.
+- **Root Cause**: The audit agents (`auditAgent.ts`, `api/cron-audit.ts`, and `server/index.js`) were only querying the database table `apify_scraped_reviews`. Because no scraper process had been created for `qr_codes.google_review_link`, this table was completely empty (0 rows). Every scan was compared against an empty array `[]` and marked `verified_fail`.
+
+### Fixes Applied
+- **Live Apify Scraper Integration (`server/index.js`)**:
+  - Implemented `scrapeReviewsForGoogleLink` utilizing Apify actor `compass/google-maps-reviews-scraper`.
+  - Added `resolveGoogleReviewLink` to follow short Google redirects (`share.google`, `maps.app.goo.gl`, `g.page/r`).
+  - Implemented `auditScansForQRCode` to scrape live reviews and match them directly with scan messages.
+  - Added `POST /api/audit/trigger` endpoint allowing on-demand scraping and verification for specific businesses or scans.
+- **Frontend Live Scraping Hooks (`src/lib/auditAgent.ts`, `QRDetail.tsx`, `Analytics.tsx`)**:
+  - Added `triggerBackendAudit` to trigger the backend Apify scraper when clicking "Re-Review 🔄", "Fast-Track Audit", or "Run 24h Audit Now".
+  - Enhanced text normalization to handle leading emojis ("💙", "🚑", "👏", "😊", "🙏") and punctuation.
+  - Improved fuzzy similarity matching to use `Math.min` word overlap and a 0.70 threshold.
+  - Re-fetched fresh data immediately in UI after triggering audit so reviews update to `Verified` instantly.
+- **Live Verification**:
+  - Verified and updated 10 existing scans for `HM&Ambulance` (`4ba1c6f5-a01a-4335-abd3-0ae28f039a73`) and 8 scans for `HM Abulance` (`6cf00dc2-0c40-4e8a-95bc-5c04f36efc3c`) to `verified_success` (including Dayananda Sagar, Reshma Pantala, Santhosh Vana, Poojitha Singidi, Spandana Kumili).
+- **Quality & Tests**:
+  - Vitest: 8/8 tests passed (including new emoji review matching test).
+  - ESLint: 0 errors.
+  - Vite: Production build compiled cleanly into `dist/`.
+
+### Files Modified
+- `server/index.js`
+- `src/lib/auditAgent.ts`
+- `src/pages/QRDetail.tsx`
+- `src/pages/Analytics.tsx`
+- `api/cron-audit.ts`
+- `src/test/auditAgent.test.ts`
+- `PROJECT_MEMORY/CURRENT_TASK.md`
+- `PROJECT_MEMORY/CHANGELOG.md`
+- `PROJECT_CHANGELOG.md`
+
 ## 2026-11-05 (Fix: Resilient Schema Fallbacks, Service Worker Fetch Crash, & PostgREST 400 Resolution)
 
 ### Issues Diagnosed

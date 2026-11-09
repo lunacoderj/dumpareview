@@ -1800,77 +1800,215 @@ app.post('/api/admin/campaigns/:id/sync', requireAuth, requireAdmin, async (req,
 
 
 // =========================================================================
-// 24-HOUR REVIEW VERIFICATION AUDIT AGENT (Daily at 00:00 midnight)
+// 24-HOUR REVIEW VERIFICATION AUDIT AGENT & LIVE GOOGLE MAPS SCRAPER
 // =========================================================================
-async function run24HourReviewAudit() {
-  console.log('[24H AUDIT AGENT] Starting daily verification cycle at 00:00...');
+
+function normalizeAuditText(text) {
+  return (text || '')
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function computeAuditSimilarity(str1, str2) {
+  const norm1 = normalizeAuditText(str1);
+  const norm2 = normalizeAuditText(str2);
+  if (!norm1 || !norm2) return 0;
+  if (norm1 === norm2) return 1.0;
+  if (norm2.includes(norm1) || norm1.includes(norm2)) return 0.95;
+
+  const words1 = new Set(norm1.split(' ').filter(w => w.length > 2));
+  const words2 = new Set(norm2.split(' ').filter(w => w.length > 2));
+  let match = 0;
+  for (const w of words1) {
+    if (words2.has(w)) match++;
+  }
+  const denominator = Math.min(words1.size, words2.size);
+  return denominator > 0 ? match / denominator : 0;
+}
+
+async function resolveGoogleReviewLink(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
+  const trimmed = rawUrl.trim();
+  if (trimmed.includes('google.com/maps/place/')) return trimmed;
   try {
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const batchId = 'BATCH-' + new Date().toISOString().slice(0, 10);
+    const res = await fetch(trimmed, { redirect: 'follow' });
+    return res.url || trimmed;
+  } catch (err) {
+    console.warn('[Audit Link Resolver] Failed to resolve short link, using original:', err.message);
+    return trimmed;
+  }
+}
 
-    const { data: pendingScans, error: scanErr } = await supabase
-      .from('scan_events')
-      .select('id, qr_code_id, message_used, scanned_at, marked_for_audit, audit_count, qr_codes(id, name, user_id, google_review_link)')
-      .eq('verification_status', 'pending');
-
-    if (scanErr) throw scanErr;
-    
-    // Dual-condition: marked_for_audit === true OR aged >= 24 hours
-    const eligibleScans = (pendingScans || []).filter(s => {
-      if (s.marked_for_audit) return true;
-      return new Date(s.scanned_at) <= new Date(twentyFourHoursAgo);
+async function scrapeReviewsForGoogleLink(googleLink) {
+  if (!apifyClient) {
+    console.warn('[Apify Scraper] APIFY_API_TOKEN not configured.');
+    return [];
+  }
+  try {
+    const resolvedUrl = await resolveGoogleReviewLink(googleLink);
+    console.log(`[Apify Scraper] Scraping Google Maps reviews for: ${resolvedUrl}`);
+    const run = await apifyClient.actor('compass/google-maps-reviews-scraper').call({
+      startUrls: [{ url: resolvedUrl }],
+      maxReviews: 50,
+      language: 'en'
     });
+    const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
+    console.log(`[Apify Scraper] Scraped ${items.length} reviews from Google Maps.`);
+    return items || [];
+  } catch (err) {
+    console.error('[Apify Scraper Error]:', err.message);
+    return [];
+  }
+}
 
-    if (eligibleScans.length === 0) {
-      console.log('[24H AUDIT AGENT] No pending scans ready for audit. Recent scans under 24 hours not marked are deferred.');
-      return { success: true, count: 0 };
-    }
+async function auditScansForQRCode(qrId, options = {}) {
+  const { forceAll = false } = options;
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const batchId = 'BATCH-' + new Date().toISOString().slice(0, 10);
 
-    console.log('[24H AUDIT AGENT] Found ' + eligibleScans.length + ' eligible scans to verify...');
+  // 1. Fetch QR code details
+  const { data: qr, error: qrErr } = await supabase
+    .from('qr_codes')
+    .select('id, name, google_review_link, user_id')
+    .eq('id', qrId)
+    .single();
 
-    const { data: scraped } = await supabase
-      .from('apify_scraped_reviews')
-      .select('review_text, reviewer_name, stars')
-      .limit(200);
+  if (qrErr || !qr || !qr.google_review_link) {
+    console.warn(`[Audit QR] QR code ${qrId} not found or missing google_review_link.`);
+    return { success: false, reason: 'QR code not found or missing review link' };
+  }
 
-    let successCount = 0;
-    let failCount = 0;
+  // 2. Fetch unverified scans for this QR code
+  const { data: scans, error: scanErr } = await supabase
+    .from('scan_events')
+    .select('id, qr_code_id, message_used, scanned_at, marked_for_audit, audit_count')
+    .eq('qr_code_id', qrId)
+    .neq('verification_status', 'verified_success');
 
-    for (const scan of eligibleScans) {
-      const msg = (scan.message_used || '').toLowerCase().replace(/[^\w\s]/g, '').trim();
-      let matchFound = false;
+  if (scanErr || !scans || scans.length === 0) {
+    return { success: true, count: 0, verifiedCount: 0, failCount: 0 };
+  }
 
-      if (scraped && scraped.length > 0 && msg.length > 5) {
-        for (const rev of scraped) {
-          const revText = (rev.review_text || '').toLowerCase().replace(/[^\w\s]/g, '').trim();
-          if (revText.includes(msg) || msg.includes(revText)) {
-            matchFound = true;
-            break;
-          }
+  // Dual-condition: marked_for_audit === true OR aged >= 24 hours OR forceAll
+  const eligibleScans = scans.filter(s => {
+    if (forceAll || s.marked_for_audit) return true;
+    return new Date(s.scanned_at) <= new Date(twentyFourHoursAgo);
+  });
+
+  if (eligibleScans.length === 0) {
+    return { success: true, count: 0, verifiedCount: 0, failCount: 0 };
+  }
+
+  // 3. Scrape fresh reviews from Google Maps via Apify
+  const scrapedReviews = await scrapeReviewsForGoogleLink(qr.google_review_link);
+  console.log(`[Audit QR] Matching ${eligibleScans.length} scans against ${scrapedReviews.length} scraped reviews...`);
+
+  let verifiedCount = 0;
+  let failCount = 0;
+  const results = [];
+
+  for (const scan of eligibleScans) {
+    const msg = scan.message_used || '';
+    let matchFound = null;
+    let maxSim = 0;
+
+    if (scrapedReviews.length > 0 && msg.trim().length > 3) {
+      for (const rev of scrapedReviews) {
+        if (!rev.text) continue;
+        const sim = computeAuditSimilarity(msg, rev.text);
+        if (sim >= 0.70 && sim > maxSim) {
+          maxSim = sim;
+          matchFound = rev;
         }
       }
-
-      const status = matchFound ? 'verified_success' : 'verified_fail';
-      if (status === 'verified_success') successCount++;
-      else failCount++;
-
-      const currentAuditCount = (scan.audit_count || 0) + 1;
-
-      await supabase
-        .from('scan_events')
-        .update({
-          verification_status: status,
-          marked_for_audit: false,
-          audit_count: currentAuditCount,
-          verified_at: new Date().toISOString(),
-          verification_batch_id: batchId,
-          agent_notes: matchFound ? 'Verified on Google Maps by 24hr Agent' : 'Not found in 24hr audit cycle',
-        })
-        .eq('id', scan.id);
     }
 
-    console.log('[24H AUDIT AGENT] Audit finished. ' + successCount + ' verified success, ' + failCount + ' fail.');
-    return { success: true, count: eligibleScans.length, successCount, failCount };
+    const currentAuditCount = (scan.audit_count || 0) + 1;
+    let finalStatus = 'verified_fail';
+    let notes = `Not found among ${scrapedReviews.length} live Google reviews`;
+    let reviewId = null;
+
+    if (matchFound) {
+      finalStatus = 'verified_success';
+      notes = `Verified on Google Maps (★${matchFound.stars || 5} by ${matchFound.name || 'customer'})`;
+      reviewId = matchFound.reviewId || null;
+      verifiedCount++;
+    } else {
+      failCount++;
+    }
+
+    await supabase
+      .from('scan_events')
+      .update({
+        verification_status: finalStatus,
+        marked_for_audit: false,
+        audit_count: currentAuditCount,
+        verified_at: new Date().toISOString(),
+        verification_batch_id: batchId,
+        agent_notes: notes,
+        matched_google_review_id: reviewId,
+      })
+      .eq('id', scan.id);
+
+    results.push({
+      scanId: scan.id,
+      status: finalStatus,
+      reviewer: matchFound?.name || null,
+      stars: matchFound?.stars || null,
+      similarity: maxSim,
+      notes
+    });
+  }
+
+  return {
+    success: true,
+    qrId,
+    qrName: qr.name,
+    totalAudited: eligibleScans.length,
+    verifiedCount,
+    failCount,
+    results
+  };
+}
+
+async function run24HourReviewAudit() {
+  console.log('[24H AUDIT AGENT] Starting verification cycle...');
+  try {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    
+    // 1. Find all QR codes with unverified scans
+    const { data: pendingScans, error: scanErr } = await supabase
+      .from('scan_events')
+      .select('qr_code_id, marked_for_audit, scanned_at')
+      .neq('verification_status', 'verified_success');
+
+    if (scanErr) throw scanErr;
+
+    const eligibleQRIds = new Set();
+    for (const s of (pendingScans || [])) {
+      if (s.marked_for_audit || new Date(s.scanned_at) <= new Date(twentyFourHoursAgo)) {
+        if (s.qr_code_id) eligibleQRIds.add(s.qr_code_id);
+      }
+    }
+
+    console.log(`[24H AUDIT AGENT] Found ${eligibleQRIds.size} businesses with scans to verify.`);
+    let totalAudited = 0;
+    let totalVerified = 0;
+    let totalFailed = 0;
+
+    for (const qrId of eligibleQRIds) {
+      const qrRes = await auditScansForQRCode(qrId);
+      if (qrRes && qrRes.success) {
+        totalAudited += (qrRes.totalAudited || 0);
+        totalVerified += (qrRes.verifiedCount || 0);
+        totalFailed += (qrRes.failCount || 0);
+      }
+    }
+
+    console.log(`[24H AUDIT AGENT] Completed: ${totalAudited} scans audited, ${totalVerified} verified, ${totalFailed} failed.`);
+    return { success: true, totalAudited, totalVerified, totalFailed };
   } catch (err) {
     console.error('[24H AUDIT AGENT ERROR]:', err);
     return { success: false, error: err.message };
@@ -1892,6 +2030,44 @@ app.get('/api/cron/audit-reviews', async (req, res) => {
 app.post('/api/cron/audit-reviews', async (req, res) => {
   const result = await run24HourReviewAudit();
   res.json(result);
+});
+
+// Targeted on-demand audit trigger endpoint (called by frontend)
+app.post('/api/audit/trigger', async (req, res) => {
+  try {
+    const { qrId, scanId, userId } = req.body || {};
+    console.log('[API /api/audit/trigger] Request received:', { qrId, scanId, userId });
+
+    if (scanId) {
+      // Find scan's qr_code_id and mark it for audit
+      const { data: scan } = await supabase
+        .from('scan_events')
+        .select('id, qr_code_id')
+        .eq('id', scanId)
+        .single();
+
+      if (scan && scan.qr_code_id) {
+        await supabase
+          .from('scan_events')
+          .update({ verification_status: 'pending', marked_for_audit: true })
+          .eq('id', scanId);
+        const result = await auditScansForQRCode(scan.qr_code_id, { forceAll: true });
+        return res.json(result);
+      }
+    }
+
+    if (qrId) {
+      const result = await auditScansForQRCode(qrId, { forceAll: true });
+      return res.json(result);
+    }
+
+    // Otherwise run general audit
+    const result = await run24HourReviewAudit();
+    return res.json(result);
+  } catch (err) {
+    console.error('[API /api/audit/trigger ERROR]:', err);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 const PORT = process.env.PORT || 5000;

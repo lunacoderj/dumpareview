@@ -20,9 +20,32 @@ export interface AuditRunSummary {
   scansChecked: AuditScanResult[];
 }
 
+const BACKEND_AUDIT_URL = "https://dumpareview.onrender.com/api/audit/trigger";
+
 /**
- * Normalizes review text for reliable matching by removing excess whitespace,
- * punctuation, and casing differences.
+ * Triggers backend Apify live Google Maps scraper for specified target
+ */
+export async function triggerBackendAudit(payload: { qrId?: string; scanId?: string; userId?: string }): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 35000); // 35s max for Apify scrape
+    const res = await fetch(BACKEND_AUDIT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return res.ok;
+  } catch (err) {
+    console.warn("[AuditAgent] Backend audit trigger delayed or offline:", err);
+    return false;
+  }
+}
+
+/**
+ * Normalizes review text for reliable matching by removing emojis, punctuation,
+ * excess whitespace, and casing differences.
  */
 export function normalizeText(text: string): string {
   return (text || "")
@@ -42,13 +65,13 @@ export function computeSimilarity(str1: string, str2: string): number {
   if (norm1 === norm2) return 1.0;
   if (norm2.includes(norm1) || norm1.includes(norm2)) return 0.95;
 
-  const words1 = new Set(norm1.split(" "));
-  const words2 = new Set(norm2.split(" "));
+  const words1 = new Set(norm1.split(" ").filter((w) => w.length > 2));
+  const words2 = new Set(norm2.split(" ").filter((w) => w.length > 2));
   let match = 0;
   for (const w of words1) {
-    if (words2.has(w) && w.length > 2) match++;
+    if (words2.has(w)) match++;
   }
-  const denominator = Math.max(words1.size, words2.size);
+  const denominator = Math.min(words1.size, words2.size);
   return denominator > 0 ? match / denominator : 0;
 }
 
@@ -65,7 +88,9 @@ export async function markScanForAudit(scanId: string): Promise<boolean> {
       })
       .eq("id", scanId);
 
-    return !error;
+    if (error) return false;
+    triggerBackendAudit({ scanId });
+    return true;
   } catch (err) {
     console.error("Failed to mark scan for audit:", err);
     return false;
@@ -74,6 +99,7 @@ export async function markScanForAudit(scanId: string): Promise<boolean> {
 
 /**
  * Marks a failed or unverified scan event for re-review by resetting verification status to pending
+ * and immediately triggers the backend Google Maps scraper to check live reviews.
  */
 export async function markScanForReReview(scanId: string): Promise<boolean> {
   try {
@@ -86,7 +112,11 @@ export async function markScanForReReview(scanId: string): Promise<boolean> {
       })
       .eq("id", scanId);
 
-    return !error;
+    if (error) return false;
+
+    // Trigger backend Apify live Google Maps scrape
+    triggerBackendAudit({ scanId });
+    return true;
   } catch (err) {
     console.error("Failed to mark scan for re-review:", err);
     return false;
@@ -95,6 +125,7 @@ export async function markScanForReReview(scanId: string): Promise<boolean> {
 
 /**
  * Marks all pending or unverified scans of a specific business/QR code for audit
+ * and triggers live Google Maps review scrape.
  */
 export async function markBusinessForAudit(qrId: string): Promise<number> {
   try {
@@ -117,6 +148,9 @@ export async function markBusinessForAudit(qrId: string): Promise<number> {
       .select("id");
 
     if (error) throw error;
+
+    // Trigger backend Apify live Google Maps scrape
+    triggerBackendAudit({ qrId });
     return updated ? updated.length : 0;
   } catch (err) {
     console.error("Failed to mark business for audit:", err);
@@ -135,7 +169,14 @@ export async function run24HourAuditAgent(userId?: string): Promise<AuditRunSumm
   const batchId = `BATCH-${new Date().toISOString().slice(0, 10)}`;
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-  // 1. Fetch pending scans (strictly exclude verified_success)
+  // 1. Trigger backend live Google Maps Apify scrape
+  try {
+    await triggerBackendAudit({ userId });
+  } catch {
+    // Continue with database verification if backend is offline
+  }
+
+  // 2. Fetch pending scans (strictly exclude verified_success)
   const query = supabase
     .from("scan_events")
     .select("id, qr_code_id, message_used, scanned_at, marked_for_audit, audit_count, qr_codes(id, name, user_id, google_review_link)")
@@ -212,7 +253,7 @@ export async function run24HourAuditAgent(userId?: string): Promise<AuditRunSumm
       if (scraped && scraped.length > 0) {
         for (const rev of scraped) {
           const sim = computeSimilarity(msg, rev.review_text || "");
-          if (sim >= 0.75) {
+          if (sim >= 0.70) {
             matchFound = true;
             matchNotes = `Matched Google Review (${(sim * 100).toFixed(0)}% similarity by ${rev.reviewer_name || "customer"})`;
             break;

@@ -143,12 +143,11 @@ export default function QRDetail() {
   // Row action: Fast track
   const handleFastTrackScan = async (scanId: string) => {
     setRowActionId(scanId);
+    toast.info("Scraping Google Maps to verify review... Please wait.");
     const success = await markScanForAudit(scanId);
     if (success) {
-      toast.success("Fast-tracked for audit! The 24-hour wait is bypassed.");
-      setEvents((prev) =>
-        prev.map((e) => (e.id === scanId ? { ...e, marked_for_audit: true } : e))
-      );
+      toast.success("Fast-tracked for audit! The agent is checking Google Maps.");
+      await fetchData();
     } else {
       toast.error("Failed to mark scan for audit.");
     }
@@ -158,14 +157,11 @@ export default function QRDetail() {
   // Row action: Re-review failed
   const handleReReviewScan = async (scanId: string) => {
     setRowActionId(scanId);
+    toast.info("Scraping live Google reviews to verify... Please wait.");
     const success = await markScanForReReview(scanId);
     if (success) {
-      toast.success("Marked for re-review! The agent will re-audit Google Maps.");
-      setEvents((prev) =>
-        prev.map((e) =>
-          e.id === scanId ? { ...e, verification_status: "pending", marked_for_audit: true } : e
-        )
-      );
+      toast.success("Audit agent triggered! Re-evaluating against Google Maps.");
+      await fetchData();
     } else {
       toast.error("Failed to mark for re-review.");
     }

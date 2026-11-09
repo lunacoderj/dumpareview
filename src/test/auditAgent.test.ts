@@ -27,5 +27,12 @@ describe("Audit Agent Matching & Normalization Engine", () => {
     const score = computeSimilarity(original, onGoogle);
     expect(score).toBeLessThan(0.3);
   });
+
+  it("should successfully match real-world review with leading emoji and slight variations", () => {
+    const scanMsg = "💙 The driver was experienced and drove safely. We reached the hospital without any issues.";
+    const googleReview = "💙 The driver was experienced and drove safely. We reached the hospital without any issues.";
+    const score = computeSimilarity(scanMsg, googleReview);
+    expect(score).toBeGreaterThanOrEqual(0.70);
+  });
 });
 

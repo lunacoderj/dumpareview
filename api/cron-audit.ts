@@ -35,7 +35,26 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     console.log(`[Daily Cron Audit] Running at ${new Date().toISOString()}...`);
 
-    // Fetch all pending scans (strictly excludes already-verified reviews)
+    // 1. Forward audit execution to Render backend (which has Apify Google Maps scraper)
+    try {
+      const serverRes = await fetch("https://dumpareview.onrender.com/api/cron/audit-reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (serverRes.ok) {
+        const serverData = await serverRes.json();
+        return res.status(200).json({
+          success: true,
+          forwardedToServer: true,
+          serverResult: serverData,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (err) {
+      console.warn("[Cron Audit] Render backend trigger delayed, falling back to database check:", err);
+    }
+
+    // 2. Fallback: Database scan check
     const { data: pendingScans, error: fetchErr } = await supabase
       .from("scan_events")
       .select("id, qr_code_id, message_used, scanned_at, marked_for_audit, audit_count, qr_codes(id, name, user_id, google_review_link)")
